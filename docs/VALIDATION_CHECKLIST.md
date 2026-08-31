@@ -1,38 +1,35 @@
 # Validation Checklist
 
-Use this before wider rollout or after a meaningful source change.
+Use this checklist after meaningful source changes.
 
 ---
 
 # Runtime
 
 - [ ] JavaScript syntax passes
-- [ ] Snippet runs only from intended TACopilot site
-- [ ] Panel renders without uncaught auditor errors
-- [ ] Minimize / maximize / close work
-- [ ] Rerunning the Snippet removes prior auditor UI cleanly
+- [ ] Snippet runs on intended TACopilot host
+- [ ] UI renders
+- [ ] rerun removes previous Auditor UI cleanly
 
 ---
 
-# Input / batch
+# Batch
 
-- [ ] Valid XSUP IDs accepted
+- [ ] XSUP parsing
 - [ ] duplicates removed
-- [ ] maximum two Audit jobs run concurrently
-- [ ] third+ XSUP queues
-- [ ] next XSUP starts automatically
-- [ ] maximum one Knowledge job runs concurrently
-- [ ] Knowledge queue does not block Audit queue
+- [ ] 2 Audit workers maximum
+- [ ] queue auto-starts
+- [ ] 1 Knowledge worker maximum
+- [ ] Knowledge does not block Audit queue
 
 ---
 
-# SFDC mapping
+# SFDC
 
-- [ ] one mapping resolves automatically
-- [ ] multiple mappings pause only that XSUP
-- [ ] Choose SFDC works
-- [ ] no mapping reports failure
-- [ ] no SFDC URL/case is fabricated
+- [ ] one mapping auto-resolves
+- [ ] multiple mappings pause one XSUP
+- [ ] no mapping fails safely
+- [ ] no case is fabricated
 
 ---
 
@@ -41,14 +38,12 @@ Use this before wider rollout or after a meaningful source change.
 - [ ] XDR/XSIAM detection
 - [ ] XSOAR detection
 - [ ] Cortex Cloud detection
-- [ ] high-confidence Auto detect continues
-- [ ] ambiguous detection pauses only that XSUP
-- [ ] Ask me for every XSUP works
-- [ ] Product shown in Dashboard
-- [ ] Product shown in detail
-- [ ] Change Product & Re-run Review works
-- [ ] Product change does not unnecessarily rerun TACO
-- [ ] Product change invalidates incompatible Audit/Knowledge reuse
+- [ ] high-confidence Auto continues
+- [ ] ambiguity pauses only one XSUP
+- [ ] manual mode works
+- [ ] Change Product works
+- [ ] product change invalidates incompatible Audit/Knowledge
+- [ ] product change does not unnecessarily force TACO
 
 ---
 
@@ -56,8 +51,8 @@ Use this before wider rollout or after a meaningful source change.
 
 ## XDR/XSIAM
 
-- [ ] Resolution = Functions as designed is in scope
-- [ ] unrelated fields remain Not Applicable unless policy explicitly establishes them
+- [ ] Functions as designed trigger
+- [ ] Resolution review
 
 ## XSOAR
 
@@ -68,111 +63,100 @@ Use this before wider rollout or after a meaningful source change.
 
 ## Cortex Cloud
 
-- [ ] approved Resolution trigger values
-- [ ] RCA User Error trigger
-- [ ] RCA Category is not used as RCA fallback
-- [ ] only triggered fields reviewed
+- [ ] supported Resolution triggers
+- [ ] RCA User Error
+- [ ] RCA Category not used as RCA fallback
 
 ---
 
 # TACO freshness
 
 - [ ] no TACO → start
-- [ ] usable current TACO → reuse
-- [ ] active/no final report → wait
-- [ ] newer Jira/SFDC evidence → refresh
-- [ ] failed/incomplete TACO → refresh
+- [ ] current usable TACO → reuse
+- [ ] running/no final → wait
+- [ ] newer case evidence → refresh
+- [ ] failed/incomplete → refresh
 - [ ] age alone does not refresh
-- [ ] completed usable report takes precedence over ambiguous progress state
-- [ ] Re-analyze All forces full refresh
+- [ ] Re-analyze All forces fresh TACO
 
 ---
 
 # Evidence
 
-- [ ] Jira comments classified correctly
-- [ ] SFDC internal classified correctly
-- [ ] TAC public classified correctly
-- [ ] customer public classified correctly
-- [ ] Jira ticket event classified correctly
-- [ ] structured taxonomy extracted
-- [ ] latest evidence timestamp calculated
-- [ ] full evidence retained for source/reuse state
-- [ ] focused evidence bounded for Case Chat
-- [ ] focused evidence does not imply absence
+- [ ] Jira classification
+- [ ] SFDC internal classification
+- [ ] TAC public classification
+- [ ] customer public classification
+- [ ] ticket event extraction
+- [ ] structured fields extraction
+- [ ] latest evidence timestamp
+- [ ] selected evidence does not imply absence
 
 ---
 
 # Audit
 
-- [ ] applicable product fields only
-- [ ] Current Value captured
+- [ ] product-specific fields only
+- [ ] Current Value
 - [ ] Correct / INCORRECT / UNDETERMINED
 - [ ] Change Required
-- [ ] Recommended Value when needed
+- [ ] Recommended Value
 - [ ] detailed explanation
 - [ ] supporting original evidence
 - [ ] exact Support action
-- [ ] TACO Customer Response not treated as proof of sent message
-- [ ] no engineer-performance scoring by default
+- [ ] no broad TAC performance scoring by default
 
 ---
 
 # Audit reuse
 
-- [ ] exact matching completed Case Chat reused
-- [ ] source-current compatible fallback reused
-- [ ] matching active Case Chat waited on
-- [ ] failed prior result not reused
+- [ ] exact completed result reused
+- [ ] compatible current result reused
+- [ ] matching running result waited on
+- [ ] failed result not reused
 - [ ] product mismatch not reused
-- [ ] stale source boundary not reused
-- [ ] code/UI/prompt change alone does not force unnecessary regeneration
+- [ ] source change invalidates as intended
 
 ---
 
 # Manual controls
 
-- [ ] Regenerate Audit visible under Retrospective Audit card
-- [ ] Regenerate Audit disabled while unsafe/busy
-- [ ] Regenerate Audit does not rerun TACO
-- [ ] Regenerate Audit does not auto-regenerate Knowledge
-- [ ] existing Knowledge becomes outdated when appropriate
-- [ ] Regenerate KCS/Knowledge visible under Knowledge card
-- [ ] Regenerate Knowledge does not rerun TACO
-- [ ] Regenerate Knowledge does not rerun Audit
-- [ ] Re-analyze All is separate/full refresh
+- [ ] Regenerate Audit visible
+- [ ] does not rerun TACO
+- [ ] does not auto-regenerate Knowledge
+- [ ] Knowledge marked outdated when appropriate
+- [ ] Regenerate KCS/Knowledge visible
+- [ ] Knowledge regeneration does not rerun TACO/Audit
+- [ ] Re-analyze All remains separate
 
 ---
 
 # Overall status
 
-- [ ] Audit running → active
+- [ ] Audit active → active
 - [ ] Audit queued → waiting
-- [ ] Product/SFDC selection → action required
 - [ ] Knowledge checking → active
 - [ ] Knowledge queued → waiting
 - [ ] Knowledge generating → active
+- [ ] Knowledge repair → active
 - [ ] Knowledge outdated → attention
-- [ ] Knowledge failed → failure
-- [ ] green/complete only when required workflow is complete/skipped
+- [ ] Knowledge failed → failed
+- [ ] green only when required workflow is complete/skipped
 
 ---
 
 # Knowledge enrichment
 
-- [ ] correct artifact type selected
-- [ ] enrichment uses only actually available source material
-- [ ] new factual additions cite underlying source
-- [ ] no loose reference dumping
-- [ ] unnecessary customer-specific data generalized
-- [ ] existing knowledge considered before duplicate creation
+- [ ] correct artifact type
+- [ ] case-specific details generalized
+- [ ] relevant available sources used
+- [ ] no source claimed unless actually available
+- [ ] no unnecessary reference dump
 
 ---
 
-# Knowledge quality
+# Independent quality review
 
-- [ ] independent quality Case Chat runs for regeneration/new generation
-- [ ] artifact-specific rubric used
 - [ ] accuracy
 - [ ] usefulness
 - [ ] completeness
@@ -183,98 +167,124 @@ Use this before wider rollout or after a meaningful source change.
 - [ ] consistency
 - [ ] readability
 - [ ] discoverability
+- [ ] existing-Knowledge awareness
 - [ ] audience fit
 - [ ] verification
-- [ ] publication language remains draft/review-oriented
+- [ ] draft/publication boundary
+
+---
+
+# Provenance resolution
+
+Test finalizer with:
+
+- [ ] `[inference]`
+- [ ] `[from case data]`
+- [ ] `[derived analysis]`
+
+Confirm:
+
+- [ ] marker never merely deleted while unsupported claim remains
+- [ ] supported claim is sourced/reworded
+- [ ] useful uncertainty moves to Validation
+- [ ] unnecessary unsupported claim removed
+- [ ] material validation downgrades readiness
 
 ---
 
 # Deterministic Knowledge gate
 
-- [ ] no internal reuse metadata in final artifact
-- [ ] no unresolved internal placeholder/token
-- [ ] no raw inference marker
-- [ ] no unresolved editorial placeholder
+- [ ] minimum useful content
+- [ ] no `[XSUP-AUDITOR-META]`
+- [ ] no unresolved `@@...@@`
+- [ ] no raw provenance marker
+- [ ] no TODO/TBD/editorial placeholder
 - [ ] balanced code fences
-- [ ] required artifact sections
-- [ ] correct XSUP target
-- [ ] XSUP not in Search Keywords
-- [ ] SFDC ID not in Search Keywords
-- [ ] Source References identify underlying sources
+- [ ] required headings
+- [ ] correct Generated From target
+- [ ] no XSUP in Search Keywords
+- [ ] no SFDC ID in Search Keywords
+- [ ] Source References identifies underlying sources
 - [ ] material validation prevents READY
-- [ ] NOT READY artifact not treated as final downloadable Knowledge
 
 ---
 
-# Knowledge reuse
+# KCS required sections
 
-- [ ] current quality-reviewed artifact reused
-- [ ] source-current compatible prior artifact can be reused
-- [ ] old current artifact does not silently regenerate because local methodology changed
-- [ ] Regenerate Knowledge deliberately applies latest quality workflow
-- [ ] product/artifact mismatch invalidates reuse
-
----
-
-# HTML / links
-
-- [ ] model content escaped before HTML
-- [ ] HTTP/HTTPS validation
-- [ ] generated links safe
-- [ ] Markdown headings/lists render
-- [ ] fenced code blocks render correctly
-- [ ] no unresolved link tokens
+- [ ] Symptoms / Error
+- [ ] Cause
+- [ ] How to Check
+- [ ] How to Confirm
+- [ ] Resolution / Fix
+- [ ] Source References
 
 ---
 
-# Reports
+# Automatic repair
 
-- [ ] Audit HTML
-- [ ] Review Paste Comment
-- [ ] Knowledge HTML
-- [ ] individual download
-- [ ] combined Audit download
-- [ ] combined Knowledge download
-- [ ] copy-all actions
+Inject each repairable issue and confirm:
+
+- [ ] raw provenance
+- [ ] placeholder
+- [ ] missing required section
+- [ ] Search Keywords issue
+- [ ] Source References issue
+- [ ] malformed quality envelope
+
+Confirm:
+
+- [ ] only one automatic repair pass
+- [ ] repair uses existing evidence basis
+- [ ] no new diagnosis invented
+- [ ] deterministic gate reruns after repair
+- [ ] still-failing artifact becomes NOT READY
+- [ ] substantive AI FAIL is not automatically overridden
+
+---
+
+# Readiness
+
+- [ ] READY only with no material validation item
+- [ ] DRAFTABLE when material validation remains
+- [ ] NOT READY for blocking quality/safety failure
+- [ ] NOT READY not treated as final downloadable Knowledge
+
+---
+
+# Rendering
+
+- [ ] Markdown headings
+- [ ] lists
+- [ ] code blocks
+- [ ] safe links
+- [ ] no internal link placeholder leak
+- [ ] model HTML escaped
 
 ---
 
 # Storage
 
-- [ ] Browser Downloads works
-- [ ] Choose Folder requires user action
-- [ ] selected folder writes work
-- [ ] storage failure does not fail Audit
+- [ ] Browser Downloads
+- [ ] Choose Folder
+- [ ] storage error does not fail Audit
 - [ ] folder handle not serialized
 
 ---
 
 # Session
 
-- [ ] Save Session downloads JSON
-- [ ] Restore Session validates schema
-- [ ] completed data restored
-- [ ] active Audit restored as stopped
-- [ ] active/queued Knowledge restored as stopped
-- [ ] folder permission not restored silently
-
----
-
-# Stop All
-
-- [ ] queued Audit stopped
-- [ ] queued Knowledge stopped
-- [ ] local controller aborted
-- [ ] UI reflects stopped state
-- [ ] documentation does not promise server-side cancellation
+- [ ] Save Session
+- [ ] Restore Session
+- [ ] active work restores stopped
+- [ ] completed work preserved
 
 ---
 
 # Documentation
 
-- [ ] README matches actual UI labels
-- [ ] User Guide matches actual workflow
-- [ ] Product Policies match source policy objects
-- [ ] Knowledge Quality matches current generation/gate
-- [ ] FAQ/security language does not claim formal approval
-- [ ] Technical Guide reflects reuse schemas/endpoints/current invariants
+- [ ] README matches UI/workflow
+- [ ] Knowledge Quality matches actual quality pipeline
+- [ ] FAQ covers provenance/repair/readiness
+- [ ] Technical Guide preserves current invariants
+- [ ] Troubleshooting covers quality-gate failures
+- [ ] no real customer/case examples committed

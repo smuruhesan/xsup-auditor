@@ -14,6 +14,7 @@ Runtime model
 - Two XSUP audit workers + one independent knowledge-artifact worker.
 - Automatic TACO freshness: reuse current analysis, wait for a running analysis, or refresh only when current evidence requires it.
 - Audit and knowledge Case Chat results are fingerprinted and reused only when their current inputs still match.
+- Fresh knowledge uses enrichment -> independent quality review -> deterministic safety gate, with one evidence-bounded repair pass for generic output/provenance defects.
 
 Artifact storage
 - Default: browser Downloads.
@@ -2128,6 +2129,25 @@ MANDATORY REVIEW ACTIONS
 - Do not use the originating XSUP/SFDC ID as a reusable search keyword.
 - Do not say "publish" as an already-approved action. This remains a draft for human review.
 
+PROVENANCE RESOLUTION — MANDATORY
+The retrospective or enriched draft may contain internal analytical markers such as:
+[inference], [from case data], [derived analysis].
+These markers are useful during investigation but are NEVER allowed in the final user-facing artifact.
+
+For EVERY statement carrying one of those markers:
+1. Do NOT merely delete the marker while leaving the claim unchanged.
+2. If the claim is supported by an underlying source explicitly available in the supplied retrospective/draft, rewrite it as a normal sourced statement and cite/identify that underlying source.
+3. If the claim is useful but the supplied material does not establish it strongly enough, rewrite it as a clearly named TAC/SME validation item and set readiness to DRAFTABLE when material.
+4. If the claim is unnecessary or cannot be supported safely, remove the claim.
+5. Never convert an inference into a confirmed product fact just by removing the marker.
+
+Before producing the final artifact, perform a final self-check:
+- no [inference], [from case data], or [derived analysis] marker remains,
+- no [XSUP-AUDITOR-META] marker remains,
+- no unresolved @@...@@ token or editorial placeholder remains,
+- any material uncertainty appears in the artifact's Validation section and in MATERIAL_VALIDATION_ITEMS,
+- the final readiness agrees with those validation items.
+
 READINESS RULES
 READY:
 - useful and materially complete draft
@@ -2150,6 +2170,90 @@ MATERIAL_VALIDATION_ITEMS: [None / concise list]
 
 ${KNOWLEDGE_FINAL_DELIMITER}
 [the complete polished ${label}; no quality commentary before/after the artifact]
+`.trim();
+  }
+
+
+  function shouldAttemptKnowledgeQualityRepair(parsed) {
+    if (!parsed || parsed.status === "FAIL") return false;
+
+    // One repair pass is useful not only for deterministic artifact defects,
+    // but also for a malformed quality envelope. Do not retry substantive FAILs.
+    if (
+      parsed.valid === false &&
+      /quality reviewer did not return|invalid QUALITY_STATUS/i.test(parsed.reason || "")
+    ) {
+      return true;
+    }
+
+    return Array.isArray(parsed.issues) && parsed.issues.length > 0;
+  }
+
+  function buildKnowledgeQualityRepairPrompt(job, previousQualityAnswer, parsedFailure) {
+    const type = job.knowledgeArtifactType || knowledgeArtifactType(job);
+    const label = knowledgeArtifactLabel(type);
+    const issues = Array.isArray(parsedFailure?.issues) && parsedFailure.issues.length
+      ? parsedFailure.issues.map(x => `- ${x}`).join("\n")
+      : "- deterministic quality/safety validation did not approve the artifact";
+
+    return `
+KNOWLEDGE FINAL ARTIFACT REPAIR — ONE AUTOMATIC REMEDIATION PASS
+
+Target XSUP: ${job.xsup}
+SFDC: ${job.caseNumber}
+Product: ${productLabel(job)}
+Artifact Type: ${label}
+
+PURPOSE
+The independent knowledge review produced a useful candidate, but deterministic post-review checks found one or more generic quality/safety defects.
+Repair the artifact once. Do not create a new diagnosis and do not broaden the factual basis.
+
+AUTHORITATIVE RETROSPECTIVE BASIS
+${job.auditAnswer}
+
+ENRICHED DRAFT SOURCE MATERIAL
+${job.knowledgeDraftAnswer || ""}
+
+PREVIOUS QUALITY-REVIEW RESPONSE
+${previousQualityAnswer}
+
+DETERMINISTIC ISSUES TO RESOLVE
+${issues}
+
+REPAIR RULES
+1. Preserve correct, useful, source-supported content.
+2. Do not introduce new product facts, commands, APIs, paths, versions, timing, architecture, workarounds, fixes, or source claims unless they are explicitly supported by the supplied retrospective/previous draft material.
+3. Internal provenance markers such as [inference], [from case data], and [derived analysis] must not appear in the final artifact.
+4. Do NOT fix a provenance marker by simply deleting the marker:
+   - source-backed claim -> rewrite as a normal claim and identify/cite the underlying source,
+   - useful but insufficiently established claim -> move/rewrite as a TAC/SME validation item,
+   - unnecessary/unsafe claim -> remove it.
+5. If resolving a material uncertainty requires human verification, keep the useful draft but set PASS_WITH_VALIDATION + DRAFTABLE and name the validation item.
+6. If the artifact cannot be made safe/useful from the supplied basis, return FAIL + NOT READY rather than inventing missing information.
+7. Remove internal reuse metadata, unresolved @@...@@ tokens, editorial placeholders, and raw analysis/provenance labels.
+8. Repair missing/incorrect required sections, Markdown/code-fence problems, reusable Search Keywords, and Source References using only information already supported by the supplied material.
+9. Source References must identify underlying sources. Do not use TACO or Case Chat alone as the source.
+10. This remains a draft for human review. Do not state that it has been published or formally approved.
+
+${knowledgeQualityRubric(type)}
+
+FINAL SELF-CHECK BEFORE OUTPUT
+- required artifact structure is present,
+- no internal provenance/reuse marker remains,
+- no unresolved placeholder/token remains,
+- no unsupported statement was promoted to fact,
+- validation items and readiness agree,
+- Source References are directly relevant and identify underlying sources.
+
+OUTPUT EXACTLY:
+
+QUALITY_STATUS: [PASS / PASS_WITH_VALIDATION / FAIL]
+VALIDATED_ARTIFACT_READINESS: [READY / DRAFTABLE / NOT READY]
+QUALITY_SUMMARY: [one concise sentence]
+MATERIAL_VALIDATION_ITEMS: [None / concise list]
+
+${KNOWLEDGE_FINAL_DELIMITER}
+[the complete repaired ${label}; no repair commentary before/after the artifact]
 `.trim();
   }
 
@@ -6097,16 +6201,61 @@ ${KNOWLEDGE_FINAL_DELIMITER}
           update
         );
 
-        const parsed = parseKnowledgeQualityResponse(qualityRaw, job);
+        let finalQualityRaw = qualityRaw;
+        let parsed = parseKnowledgeQualityResponse(finalQualityRaw, job);
+
+        // The deterministic gate is intentionally stricter than the AI reviewer.
+        // When it finds generic output-hygiene/provenance defects, make ONE
+        // evidence-bounded repair attempt instead of immediately failing an
+        // otherwise useful artifact. A substantive AI FAIL is never auto-repaired.
+        if (shouldAttemptKnowledgeQualityRepair(parsed)) {
+          update(`Quality gate found ${parsed.issues.length} repairable issue${parsed.issues.length === 1 ? "" : "s"} · resolving provenance/format safely...`);
+
+          const repairBasePrompt = buildKnowledgeQualityRepairPrompt(
+            job,
+            finalQualityRaw,
+            parsed
+          );
+          const repairPrompt = appendReuseMarker(repairBasePrompt, meta);
+
+          const submitRepair = await postFollowup(
+            job.caseNumber,
+            job.investigationId,
+            repairPrompt
+          );
+          const repairTaskId = submitRepair?.task_id;
+          if (!repairTaskId) throw new Error("Knowledge quality repair Case Chat did not return task_id.");
+
+          const directRepairId = extractFollowupId(submitRepair);
+          const repairFollowupId = directRepairId || await waitForFollowupId(
+            job.caseNumber,
+            job.investigationId,
+            repairTaskId,
+            repairPrompt,
+            update
+          );
+
+          job.knowledgeFollowupId = repairFollowupId;
+          update(`Quality repair Case Chat #${repairFollowupId}`);
+
+          finalQualityRaw = await waitForFollowup(
+            job.caseNumber,
+            repairFollowupId,
+            update
+          );
+
+          parsed = parseKnowledgeQualityResponse(finalQualityRaw, job);
+        }
+
         if (!parsed.valid) {
           job.knowledgeQualityStatus = parsed.status || "FAIL";
           job.validatedArtifactReadiness = parsed.readiness || "NOT READY";
           job.knowledgeQualitySummary = parsed.summary || parsed.reason || "";
           job.knowledgeQualityValidationItems = parsed.validationItems || "";
-          throw new Error(`Knowledge quality gate blocked the artifact: ${parsed.reason}.`);
+          throw new Error(`Knowledge quality gate blocked the artifact after final validation: ${parsed.reason}.`);
         }
 
-        job.knowledgeRawAnswer = qualityRaw;
+        job.knowledgeRawAnswer = finalQualityRaw;
         job.knowledgeAnswer = parsed.artifact;
         job.validatedArtifactReadiness = parsed.readiness;
         job.knowledgeQualityStatus = parsed.status;

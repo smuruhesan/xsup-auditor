@@ -1,27 +1,20 @@
 # Troubleshooting
 
-Start with:
+Use this order:
 
 1. Live Dashboard
 2. Analysis & Reuse Status
 3. Execution Pipeline
-4. TACopilot → Case → TACO Analysis → Case Chat
+4. Knowledge Artifact status
+5. TACopilot → Case → TACO Analysis → Case Chat
 
 ---
 
 # Auditor panel disappeared
 
-A browser refresh removes the injected panel.
+Browser refresh removes the injected UI.
 
-Run the Chrome DevTools Snippet again.
-
----
-
-# Nothing happens after entering an XSUP
-
-Click **Run Audit(s)**.
-
-Confirm the Snippet is running from the TACopilot site.
+Run the Snippet again.
 
 ---
 
@@ -29,38 +22,41 @@ Confirm the Snippet is running from the TACopilot site.
 
 Expected.
 
-There are two Audit workers.
+Audit concurrency is 2.
 
-The next queued XSUP starts automatically when a worker becomes free.
+Additional XSUPs queue automatically.
 
 ---
 
-# Knowledge is waiting even though Audit finished
+# Knowledge is queued
 
-Expected when another Knowledge job is using the single Knowledge worker.
+Expected when the single Knowledge worker is busy.
 
 Audit workers continue independently.
 
 ---
 
-# Audit says 100% but XSUP is still active
+# Audit says 100% but XSUP is not green
 
-Check the Knowledge Artifact status.
+Check Knowledge.
 
-Audit can be complete while Knowledge is:
+Knowledge may still be:
 
-- checking history
+- checking reuse
 - queued
-- generating
+- enriching
 - quality reviewing
+- repairing
+
+Overall green should appear only when required workflow is complete/skipped.
 
 ---
 
 # Product confirmation required
 
-Automatic product detection was not high confidence.
+Auto detection was not high-confidence.
 
-Choose:
+Select:
 
 - XDR/XSIAM
 - XSOAR
@@ -72,153 +68,200 @@ Only that XSUP waits.
 
 # Multiple SFDC matches
 
-Select the actual linked SFDC case.
+Choose the actual linked case.
 
-The tool does not guess.
-
----
-
-# Mapping not found
-
-TACopilot search did not provide a confident XSUP → SFDC mapping.
-
-Verify the XSUP/linkage.
+The tool intentionally does not guess.
 
 ---
 
-# TACO says REUSED EXISTING
+# TACO shows REUSED EXISTING
 
-A usable completed TACO exists and current Jira/SFDC evidence does not require refresh.
+A usable current TACO exists.
 
 This is normal.
 
 ---
 
-# TACO started/refreshes unexpectedly
+# Audit shows REUSED EXISTING
 
-Check the reason shown under TACO Analysis.
+A compatible current Retrospective Case Chat exists.
 
-Typical causes:
-
-- no existing investigation
-- no usable final report
-- previous TACO failed
-- newer Jira/SFDC source evidence
-- Re-analyze All
-
-Old age alone should not force refresh.
+This avoids duplicate AI work.
 
 ---
 
-# Audit says REUSED EXISTING
+# Knowledge shows REUSED EXISTING
 
-A compatible Case Chat retrospective already exists and is still current for the source/product.
+A compatible current Knowledge artifact exists.
 
-The auditor reuses it to avoid duplicate analysis.
-
----
-
-# Knowledge says REUSED EXISTING
-
-A compatible Knowledge artifact already exists and is current.
-
-If it predates the latest Knowledge-quality workflow but remains source-current, it may still be reused intentionally.
-
-Use **Regenerate KCS / Regenerate Knowledge** if you want it rebuilt with the current enrichment/quality workflow.
+Use **Regenerate KCS / Regenerate Knowledge** if you intentionally want it rebuilt through the latest Knowledge quality pipeline.
 
 ---
 
-# Regenerate Audit button is disabled
+# Regenerate Audit is disabled
 
-It is disabled when it is unsafe to start, for example:
-
-- active Audit/Knowledge work is still running/queued
-- current SFDC/TACO/evidence is not ready
-
-Wait for active work to finish.
+Wait until active/conflicting work is finished and current case/TACO/evidence is ready.
 
 ---
 
-# Regenerate Knowledge button is disabled
+# Regenerate Knowledge is disabled
 
 It requires:
 
-- a completed current Audit
+- completed Audit
 - a Knowledge action/artifact type
 - no conflicting active work
 
 ---
 
-# What does Regenerate Audit do?
-
-Fresh Audit only.
-
-It does not rerun TACO.
-
-It does not automatically regenerate Knowledge.
-
-Existing Knowledge tied to the previous Audit can become outdated.
-
----
-
-# What does Regenerate Knowledge do?
-
-Fresh Knowledge only.
-
-It keeps current TACO and Audit.
-
----
-
-# What does Re-analyze All do?
-
-Fresh:
-
-```text
-TACO → Audit → Knowledge
-```
-
-Use only when a full refresh is intended.
-
----
-
 # Knowledge is DRAFTABLE
 
-The draft is useful but material validation items remain.
+This is not necessarily a failure.
 
-Read the validation items and perform the required human review.
+It means the artifact is useful but has named material validation items.
+
+Review the Validation section.
 
 ---
 
 # Knowledge is NOT READY
 
-The quality gate determined the artifact could not safely be treated as a useful final draft.
+The artifact failed an important quality/safety condition.
 
-Review the underlying Audit/evidence.
+Review:
 
-Regenerate only after the source/validation problem is understood.
-
----
-
-# Knowledge failed
-
-Check:
-
-- Case Chat state
-- quality summary/error
-- whether a previous compatible artifact exists
-- whether the generated draft failed deterministic checks
-
-Do not treat a failed artifact as publication-ready.
+- Quality Summary
+- Validation Items
+- source evidence
+- deterministic issue
+- Case Chat result
 
 ---
 
-# I only want another report copy
+# "raw internal provenance marker is visible"
 
-Run the XSUP normally.
+The final article still contains one of:
 
-If source state is unchanged, Smart Reuse should recover the existing result.
+```text
+[inference]
+[from case data]
+[derived analysis]
+```
 
-Do not use Re-analyze All merely to redownload.
+These are internal investigation markers, not final Knowledge content.
+
+The latest Knowledge pipeline attempts to resolve them automatically.
+
+If the marker remains after the repair pass, the artifact stays NOT READY.
+
+Do not simply remove the word `[inference]` manually while leaving the claim unchanged unless the claim is independently supported.
+
+---
+
+# "unresolved internal placeholder/token is visible"
+
+The final artifact still contains something like:
+
+```text
+@@TOKEN@@
+```
+
+This is treated as a blocking rendering/content defect.
+
+---
+
+# "unresolved editorial placeholder is visible"
+
+The final article still contains a writing placeholder such as:
+
+```text
+TODO
+TBD
+[insert ...]
+[placeholder ...]
+```
+
+The article is not considered final enough for normal Knowledge download.
+
+---
+
+# Missing required section
+
+The artifact type has deterministic required headings.
+
+For a KCS Draft, required sections include:
+
+- Symptoms / Error
+- Cause
+- How to Check
+- How to Confirm
+- Resolution / Fix
+- Source References
+
+The automatic repair pass may try to restore a missing section without inventing unsupported facts.
+
+---
+
+# Source References problem
+
+The final article must identify underlying supporting sources.
+
+A Source References section that contains only:
+
+```text
+TACO
+```
+
+or:
+
+```text
+Case Chat
+```
+
+is insufficient.
+
+Those are synthesis mechanisms rather than the underlying evidence.
+
+---
+
+# Search Keywords problem
+
+A reusable KCS Search Keywords section must not contain the originating:
+
+- XSUP ID
+- SFDC case ID
+
+Use symptoms/errors/features instead.
+
+---
+
+# Automatic repair failed
+
+The workflow allows only one evidence-bounded repair pass.
+
+If the repaired artifact still fails:
+
+```text
+NOT READY
+```
+
+Review the underlying evidence or regenerate after correcting the real source problem.
+
+---
+
+# Quality reviewer returned FAIL
+
+A substantive quality FAIL is not automatically treated as a formatting problem.
+
+Investigate why the Knowledge reviewer considered the artifact unsafe/inadequate.
+
+---
+
+# I only want another copy of the report
+
+Rerun normally and let Smart Reuse recover current results.
+
+Do not use Re-analyze All just for another download.
 
 ---
 
@@ -228,81 +271,48 @@ Run the Snippet again.
 
 Then either:
 
-- rerun the XSUP and allow Smart Reuse to recover current server-side results
-- restore a saved session JSON
+- rerun XSUP and use Smart Reuse
+- Restore Session
 
 ---
 
-# Restored job shows stopped
-
-Expected if the job was active when the session was saved.
-
-The session cannot truthfully restore an in-memory browser task as still running.
-
-Completed data is preserved.
-
----
-
-# Choose Folder is unavailable/blocked
-
-Use normal browser downloads.
-
-Do not bypass managed browser or corporate controls.
-
----
-
-# Stop All was clicked but TACopilot still shows Case Chat running
+# Stop All clicked, but Case Chat still runs
 
 Possible.
 
-Stop All aborts the local auditor workflow/queues/polling.
+Stop All controls the browser-side Auditor.
 
-A server-side task already submitted may continue.
+A server-side task already accepted may continue.
 
-Check TACopilot directly.
+---
+
+# Console shows CSP/source-map errors
+
+Not every browser console error belongs to the Auditor.
+
+Correlate:
+
+- URL
+- timestamp
+- request
+- Auditor activity
+
+Do not bypass corporate CSP.
 
 ---
 
 # Result looks technically wrong
 
-Do not apply the recommendation.
+Do not apply it.
 
 Verify:
 
-1. correct XSUP/SFDC
-2. correct product
+1. XSUP/SFDC mapping
+2. product
 3. TACO conclusion
-4. original Jira Engineering evidence
+4. original Engineering evidence
 5. original SFDC evidence
-6. Case Chat source/reuse status
-7. applicable product policy
+6. Audit decision
+7. Quality Summary / Validation Items
 
-Use a targeted Regenerate control only when it helps answer a real freshness/quality need.
-
----
-
-# Browser console shows unrelated CSP/source-map errors
-
-Managed/web applications can produce their own console errors.
-
-Do not assume every console error is caused by the auditor.
-
-Correlate the timestamp/URL/error with the auditor request before treating it as an auditor defect.
-
-The auditor itself should not attempt to bypass CSP.
-
----
-
-# Reporting a tool problem
-
-Provide the internal maintainer with:
-
-- XSUP (only in an approved channel)
-- expected behavior
-- actual behavior
-- visible Analysis & Reuse Status
-- visible Execution Pipeline status
-- sanitized console error if relevant
-- sanitized debug export if required
-
-Do not put customer-sensitive diagnostics into an unapproved GitHub issue.
+Then choose a targeted Regenerate action only when appropriate.

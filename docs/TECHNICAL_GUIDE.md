@@ -1,657 +1,199 @@
 # Technical Guide
 
-This document describes the architecture and maintenance contract of XSUP Retrospective Auditor v1.
-
-It is intended for developers, maintainers and future AI coding assistants.
-
-The implementation is a single self-contained JavaScript Snippet executed inside TACopilot.
+This document describes the architecture and maintenance contracts of XSUP Retrospective Auditor v1.
 
 ---
 
-# 1. Core design
-
-One common engine supports three product profiles:
+# Architecture
 
 ```text
-Common engine
-├─ XSUP → SFDC
-├─ Product detection/selection
+Common Browser Engine
+├─ XSUP → SFDC resolution
+├─ Original Jira/SFDC evidence extraction
+├─ Product detection / confirmation
 ├─ TACO freshness
-├─ Original evidence
-├─ Case Chat
+├─ Audit prompt + Case Chat
 ├─ Smart reuse
-├─ Audit parsing
-├─ Knowledge workflow
-├─ UI/dashboard/status
-├─ Report generation
-├─ Storage
-└─ Save/Restore Session
+├─ Knowledge decision
+├─ Knowledge enrichment
+├─ Independent Knowledge quality review
+├─ Provenance resolution
+├─ One automatic repair pass
+├─ Deterministic gate
+├─ Dashboard / status
+├─ Reports / storage
+└─ Save / Restore Session
 
-Product policy
+Product Profiles
 ├─ XDR/XSIAM
 ├─ XSOAR
 └─ Cortex Cloud
 ```
 
-Do not fork the runtime into separate product Snippets.
+Keep one shared Snippet.
 
-Product-specific differences belong in the profile/policy layer.
-
----
-
-# 2. Runtime boundary
-
-The source checks that it is running from TACopilot.
-
-The runtime uses the reviewer's existing authenticated browser session.
-
-Requests use same-origin credentials.
-
-Do not add embedded credentials or authentication bypasses.
+Do not fork product implementations unless the architecture is intentionally redesigned.
 
 ---
 
-# 3. Important runtime constants
+# Runtime model
 
-Current architecture includes:
+The Snippet runs on TACopilot and uses the reviewer's current authenticated browser session.
 
-```text
-VERSION = 1
-POLL_MS = 5000
-ANALYSIS_TIMEOUT_MS = 20 minutes
-CHAT_TIMEOUT_MS = 15 minutes
-Audit concurrency = 2
-Knowledge concurrency = 1
-```
-
-Reuse schemas are methodology contracts, not product-release history:
-
-```text
-AUDIT_REUSE_SCHEMA = support-field-review-v1
-KNOWLEDGE_REUSE_SCHEMA = knowledge-quality-v1
-KNOWLEDGE_DRAFT_REUSE_SCHEMA = knowledge-enriched-draft-v1
-REUSE_META_PREFIX = [XSUP-AUDITOR-META]
-```
-
-Do not bump a reuse schema for a visual-only change.
+No embedded service credential is required.
 
 ---
 
-# 4. Main TACopilot API paths
+# Concurrency contract
 
-Observed runtime paths include:
+Current design:
 
 ```text
-GET  /taco/search?q={XSUP}
-
-GET  /taco/pilot/investigation/{case}
-POST /taco/pilot/investigation/{case}/start
-POST /taco/pilot/investigation/{case}/update
-
-GET  /taco/pilot/investigation/{case}/progress?investigation_id={id}
-GET  /taco/pilot/investigation/{case}/report/{investigation_id}
-
-GET  /taco/pilot/investigation/{case}/followup?investigation_id={id}
-POST /taco/pilot/investigation/{case}/followup
-
-GET  /taco/pilot/investigation/task/{task_id}
-
-GET  /taco/case/{case}
+Audit workers     = 2
+Knowledge workers = 1
 ```
 
-Treat these as observed internal contracts that may change.
-
-Implement defensive parsing.
+Knowledge runs independently so Audit throughput can continue.
 
 ---
 
-# 5. XSUP → SFDC resolution
+# Evidence classification
 
-`/taco/search?q=XSUP-...` is parsed from HTML.
+TACopilot case comments are classified from DOM metadata.
 
-The tool extracts:
+Conceptually:
 
-- XSUP
-- SFDC case number
-- mapping detail
-- direct SFDC URL when available
+```text
+Jira ticket event
+Jira/Engineering comment
+SFDC internal
+SFDC TAC public
+SFDC customer public
+```
 
-Behavior:
-
-- one candidate → select
-- multiple candidates → `needs_selection`
-- no candidate → mapping failure
-
-Never fabricate an SFDC case.
-
-Other jobs should continue while one XSUP waits for reviewer selection.
+Structured fields are also extracted from page tables/definition/data-label structures.
 
 ---
 
-# 6. Original evidence extraction
+# TACO freshness
 
-The TACopilot case page is parsed for comment elements:
+Original case evidence is collected before the freshness decision.
 
-```javascript
-[id^="comment-"]
-```
-
-Current classification:
+High-level state machine:
 
 ```text
-comment-jira-ticket      → JIRA_TICKET_EVENT
-data-is-jira=true        → JIRA_COMMENT
-data-is-internal=true    → SFDC_INTERNAL
-data-is-external=true    → SFDC_CUSTOMER_PUBLIC
-all false                → SFDC_TAC_PUBLIC
-```
+No TACO
+  → START
 
-Structured fields are also collected from tables, definition lists and `data-label` elements.
-
-Timestamp extraction is defensive and uses DOM attributes/text exposed by TACopilot.
-
----
-
-# 7. Do not add direct Jira REST calls
-
-TACopilot's managed browser Content Security Policy blocks cross-origin direct Jira REST calls.
-
-Freshness must be derived from Jira/SFDC activity exposed through TACopilot.
-
-Do not work around the CSP.
-
----
-
-# 8. Product detection
-
-`detectProduct()` scores structured signals.
-
-Current normalization:
-
-```text
-XDR / Cortex XDR / XSIAM / Cortex XSIAM → XDR_XSIAM
-XSOAR / Demisto                          → XSOAR
-Cortex Cloud / Prisma Cloud / CNAPP /
-CSPM / CWP / Cloud Posture             → CORTEX_CLOUD
-```
-
-Signal strength is intentionally higher for structured metadata.
-
-Examples include:
-
-- TACO/case `product_type`
-- structured product/platform fields
-- mapping details
-- case header/metadata
-- Jira ticket snapshot
-
-High-confidence auto selection proceeds.
-
-Medium/low/ambiguous selection pauses the job.
-
-Manual selection is always supported.
-
----
-
-# 9. Product profiles
-
-## XDR/XSIAM
-
-Primary field order:
-
-```text
-Resolution
-```
-
-Eligibility:
-
-```text
-Resolution = Functions as designed
-```
-
-## XSOAR
-
-Primary field order:
-
-```text
-Fix Type
-Flag / Label
-```
-
-Eligibility:
-
-```text
-Session_candidate
-OR
-Fix Type = None / Functions as designed
-```
-
-## Cortex Cloud
-
-Primary field order:
-
-```text
-Resolution
-RCA
-```
-
-Eligibility:
-
-```text
-Resolution in approved retrospective set
-OR
-RCA = User Error
-```
-
-`RCA Category` must not be used as fallback RCA.
-
----
-
-# 10. Product override
-
-A manual product selection is recorded in job state.
-
-A product change invalidates Audit/Knowledge reuse because the reviewed fields/policy may change.
-
-It should not automatically force TACO refresh.
-
-Product is locked while the active Retrospective/Knowledge Case Chat request is running.
-
----
-
-# 11. TACO freshness state machine
-
-Evidence is collected before deciding TACO freshness.
-
-This is deliberate.
-
-High-level logic:
-
-```text
-force refresh
-  → REFRESH
-
-usable completed TACO
+Usable completed TACO
   ├─ newer Jira/SFDC evidence → REFRESH
   └─ otherwise               → REUSE
 
-no usable final report + genuinely active
+No usable final + genuinely running
   → WAIT
 
-failed/error/incomplete/no usable final
+Failed / incomplete / no usable final
   → REFRESH
 ```
 
-A usable completed final report takes precedence over an ambiguous stale progress state.
-
 Old age alone is not a refresh trigger.
 
-When timestamps are incomplete, prefer conservative reuse of a complete report rather than unnecessary analysis, with manual full refresh available.
+---
+
+# Product detection
+
+Structured evidence is weighted more heavily than incidental text.
+
+High confidence continues automatically.
+
+Ambiguous/low confidence pauses that XSUP.
+
+Manual product selection is supported.
+
+Product selection is part of Audit compatibility.
 
 ---
 
-# 12. TACO report readiness
+# Audit design
 
-Hypotheses alone are not sufficient.
+Audit prompts are field-centric.
 
-`reportReady()` requires a usable final synthesized conclusion/report/RCA/guidance object.
-
-During a refresh, the code waits for evidence that the report actually changed/advanced before accepting a completed progress state.
-
----
-
-# 13. Evidence selection for Case Chat
-
-The full evidence set is retained for source-boundary/fingerprint purposes.
-
-A bounded subset is selected for the Case Chat prompt.
-
-Selection uses:
-
-- report-derived keywords
-- root-cause/resolution terms
-- Engineering indicators
-- first/last records
-- noise filtering
-
-The design target is approximately 32 focused records.
-
-Do not equate "not selected into prompt" with "did not happen."
-
----
-
-# 14. Audit prompt contract
-
-`buildAuditPrompt()` dynamically includes:
-
-- XSUP
-- SFDC
-- selected product/profile
-- product policy
-- current ticket field snapshot
-- structured case taxonomy
-- TACO verified conclusion
-- original evidence
-- provenance rules
-- field-decision output contract
-- knowledge action output contract
-
-The Audit is intentionally field-centric.
-
-Do not reintroduce broad TAC performance scoring, delay scoring, handoff scoring or avoidability scoring as default output.
-
----
-
-# 15. Audit evidence principles
-
-Preserve these invariants:
+Core provenance rules:
 
 - TACO = derived analysis
 - Jira/SFDC = original evidence
-- TACO Customer Response does not prove customer communication
-- selected excerpts cannot prove absence
+- TACO-generated Customer Response is not proof of sent communication
+- absence from selected evidence is not proof of non-existence
 - insufficient evidence → UNDETERMINED
-- do not infer AI usage from writing style
-- avoid subjective labels about engineers
-- explanations must be detailed enough for an SME unfamiliar with the case
-- product-specific applicability controls which fields are reviewed
+- no subjective engineer scoring
+- only applicable product fields are reviewed
 
 ---
 
-# 16. Audit reuse metadata
+# Smart Case Chat reuse
 
-`buildAuditReuseMeta()` fingerprints the current Audit inputs.
+The Auditor checks Case Chat history before generating new work.
 
-Exact-match metadata is embedded in the submitted Case Chat question using:
+Reuse can consider:
 
-```text
-[XSUP-AUDITOR-META]
-```
+- XSUP/SFDC identity
+- selected product
+- TACO source
+- Jira/SFDC source boundary
+- Audit/Knowledge type
+- reuse metadata/fingerprint
+- structural compatibility
 
-This marker is for internal reuse correlation.
+A local UI/prompt/code change alone should not automatically force reruns of otherwise-current source results.
 
-It is not intended for user-facing report content.
-
----
-
-# 17. Case Chat history schema
-
-The history endpoint can return entries with:
-
-```text
-question
-answer
-answer_html
-created_at
-status
-id
-```
-
-Some response shapes can also expose:
-
-```text
-followup_id
-```
-
-The collector supports both:
-
-```text
-followup_id
-or
-id
-```
-
-Do not assume the history row always contains a field literally named `followup_id`.
+Matching active Case Chat should be waited on rather than duplicated.
 
 ---
 
-# 18. Smart Case Chat reuse
-
-`tryReuseCaseChat()` follows a reuse-first model.
-
-## Exact current match
-
-When a fingerprint matches, the completed result is validated and reused.
-
-## Current-compatible fallback
-
-When no exact current marker match exists, the auditor can reuse a completed result that is:
-
-- structurally compatible
-- valid for the selected product/artifact
-- completed after the current TACO/Jira/SFDC source boundary
-
-This is important.
-
-It means:
-
-> Auditor source-code/prompt/schema changes alone do not automatically regenerate otherwise-current Case Chat results.
-
-## Existing running result
-
-If the matching result is pending/running/queued/processing:
-
-- wait for it
-- do not create a duplicate
-
-## Failed result
-
-Do not reuse a failed result.
-
-Generate fresh only when necessary.
-
----
-
-# 19. Manual regeneration semantics
-
-These actions are intentionally separate.
+# Manual regeneration contracts
 
 ## Regenerate Audit
 
-`forceRerunAudit()`:
+Must:
 
-- requires current SFDC/TACO/evidence
-- sets Audit-only refresh
-- does not force TACO
-- does not force Knowledge regeneration
-- marks existing Knowledge outdated when it belonged to the previous Audit
+- keep current TACO/evidence
+- generate fresh Audit
+- not force TACO
+- not automatically regenerate Knowledge
 
-This invariant is important.
+Existing Knowledge can become outdated.
 
 ## Regenerate Knowledge
 
-`forceRegenerateKnowledge()`:
+Must:
 
-- requires completed Audit + artifact type
-- forces only Knowledge
-- runs current enrichment/quality workflow
-- does not force TACO
-- does not force Audit
+- keep TACO
+- keep current completed Audit
+- regenerate Knowledge pipeline only
 
 ## Re-analyze All
 
-`forceReanalyzeTaco()`:
-
-- force TACO
-- force Audit
-- force Knowledge
-
-Do not collapse these controls.
-
----
-
-# 20. Overall job status
-
-Audit completion is not the same as workflow completion.
-
-`knowledgeUiState()` recognizes:
+Must force:
 
 ```text
-failed
-stopped
-outdated
-queued
-checking
-waiting_existing
-generating
-completed
-not_required
-not_generated
+TACO → Audit → Knowledge
 ```
 
-`overallUiState()` evaluates Audit and Knowledge so the XSUP can show:
-
-- active while Knowledge is checking/generating
-- waiting while Knowledge is queued
-- attention when Knowledge is outdated
-- failed when required Knowledge fails
-- complete only after the required workflow is complete/skipped
-
-Preserve this behavior in all UI refactors.
+Keep these controls separate.
 
 ---
 
-# 21. Live Dashboard
+# Knowledge workflow
 
-Current columns include:
+## Stage 1 — Enrichment
 
-```text
-XSUP
-Product
-SFDC
-Progress
-Current activity
-Last update
-Reviewed fields
-Review verdict
-Change needed
-Knowledge artifact
-Elapsed
-View audit
-```
+Build or reuse a draft based on the Audit and relevant source material available to the investigation.
 
-The Product column is interactive when selection/change is allowed.
+## Stage 2 — Independent Quality Review
 
-The Knowledge column displays Knowledge status/readiness independently from Audit.
+A separate Case Chat receives the Audit + enriched draft + quality rubric.
 
----
-
-# 22. Analysis & Reuse Status UI
-
-The selected XSUP renders three status cards:
-
-```text
-TACO Analysis
-Retrospective Audit
-Knowledge Artifact
-```
-
-The Retrospective card contains:
-
-```text
-Regenerate Audit
-```
-
-The Knowledge card contains:
-
-```text
-Regenerate KCS
-or
-Regenerate Knowledge
-```
-
-The header contains:
-
-```text
-Re-analyze All
-```
-
-Do not move the individual Regenerate controls somewhere users cannot discover them.
-
----
-
-# 23. Knowledge action mapping
-
-The Audit decides the primary action.
-
-The code maps actions to artifact types such as:
-
-```text
-CREATE KCS             → KCS_DRAFT
-UPDATE EXISTING KCS    → KCS_UPDATE
-UPDATE ADMIN/TECH GUIDE→ DOC_UPDATE
-CREATE/UPDATE RUNBOOK  → RUNBOOK
-KNOWN ISSUE/RELEASE NOTE → KNOWN_ISSUE
-```
-
-No Knowledge action means no artifact.
-
----
-
-# 24. Knowledge Enrichment prompt
-
-`buildKnowledgePrompt()` starts from the authoritative Audit result.
-
-The model is instructed to improve the artifact with directly relevant source material actually available to the TACO/Case Chat investigation.
-
-It must not claim sources it did not have.
-
-It must prefer directly relevant authoritative sources.
-
-It must generalize customer-specific details.
-
----
-
-# 25. Artifact-specific quality rubric
-
-The common quality rubric covers:
-
-- accuracy
-- usefulness
-- completeness
-- actionability
-- generalization
-- technical depth
-- source quality
-- consistency
-- safety/confidence
-- readability
-- discoverability
-- existing knowledge awareness
-- audience fit
-- verification
-- publication readiness
-
-Additional artifact-specific rules exist for:
-
-- KCS
-- KCS update
-- Admin/Tech Guide
-- Runbook
-- Known Issue/Release Note
-
-Do not implement one-off safety rules for a single case/product when the issue belongs to a general quality category.
-
----
-
-# 26. Knowledge draft reuse
-
-A separate reuse schema exists for enriched drafts.
-
-This lets the system avoid regenerating an identical intermediate draft when only the downstream finalization is needed.
-
----
-
-# 27. Independent Knowledge quality review
-
-`buildKnowledgeQualityPrompt()` sends:
-
-- authoritative retrospective
-- enriched draft
-- common quality rubric
-- artifact-specific rubric
-
-The reviewer must output:
+It produces:
 
 ```text
 QUALITY_STATUS
@@ -660,16 +202,91 @@ QUALITY_SUMMARY
 MATERIAL_VALIDATION_ITEMS
 
 --- FINAL ARTIFACT ---
-[complete artifact]
+...
 ```
 
-The machine-readable header is parsed separately from the user-facing artifact.
+## Stage 3 — Provenance Resolution
+
+The quality prompt explicitly handles:
+
+```text
+[inference]
+[from case data]
+[derived analysis]
+```
+
+Rules:
+
+1. do not simply delete the marker
+2. source/rewrite when underlying evidence supports the claim
+3. move uncertain material into Validation Items when useful
+4. remove unsafe/unnecessary unsupported claims
+5. never convert inference into fact by deleting a marker
+
+## Stage 4 — Deterministic gate
+
+The JavaScript validates the actual final artifact.
+
+Checks include:
+
+- minimum useful content
+- no internal reuse metadata
+- no unresolved internal token
+- no raw provenance marker
+- no editorial placeholder
+- balanced code fences
+- artifact-specific required headings
+- correct target
+- no XSUP/SFDC IDs in KCS Search Keywords
+- Source References identifies underlying sources
+- material validation/readiness consistency
+
+## Stage 5 — Automatic repair
+
+If the first quality result is not a substantive AI FAIL and deterministic checks identify repairable issues, the code can submit one repair request.
+
+Repair prompt receives:
+
+- authoritative Audit
+- enriched draft
+- previous quality answer
+- exact deterministic issues
+
+Repair must not broaden the factual basis.
+
+After repair:
+
+```text
+deterministic checks run again
+```
+
+No indefinite loop.
 
 ---
 
-# 28. Knowledge readiness rules
+# Why one repair pass?
 
-Final readiness:
+The design goal is:
+
+```text
+strict gate
++
+recover from mechanical/generic quality defects
+```
+
+not:
+
+```text
+keep asking AI until it eventually says PASS
+```
+
+A single repair protects against endless loops and excessive Case Chat usage.
+
+---
+
+# Knowledge readiness
+
+Final:
 
 ```text
 READY
@@ -677,309 +294,140 @@ DRAFTABLE
 NOT READY
 ```
 
-Material validation items prevent READY.
+Material validation items must prevent READY.
 
-A failed/not-ready final result is not treated as final downloadable knowledge.
-
----
-
-# 29. Deterministic Knowledge checks
-
-`deterministicKnowledgeQualityChecks()` provides non-LLM safety checks.
-
-Examples include:
-
-- artifact completeness
-- internal metadata leakage
-- unresolved internal placeholders
-- raw inference markers
-- editorial placeholders
-- unbalanced code fences
-- required headings by artifact type
-- target mismatch
-- XSUP/SFDC in Search Keywords
-- missing/invalid Source References
-- material validation/readiness consistency
-
-Keep these checks generic.
+Blocking deterministic defects force NOT READY.
 
 ---
 
-# 30. Internal metadata stripping
+# Artifact-specific required headings
 
-`stripInternalKnowledgeMetadata()` removes reuse metadata before final user-facing Knowledge output.
+## KCS Draft
 
-Do not expose the reuse marker in downloaded Knowledge.
+- Symptoms / Error
+- Cause
+- How to Check
+- How to Confirm
+- Resolution / Fix
+- Source References
+
+## KCS Update
+
+- Existing Knowledge Reference
+- Gap Identified
+- Proposed Additions / Changes
+- Source References
+
+## Doc Update
+
+- Target Documentation
+- Documentation Gap
+- Proposed Documentation Text
+- Source References
+
+## Runbook
+
+- Trigger / When to Use
+- Objective
+- Investigation Workflow
+- Decision Points
+- Source References
+
+## Known Issue
+
+- Issue
+- Symptoms
+- Cause / Limitation
+- Proposed Release Note / Known Issue Text
+- Source References
 
 ---
 
-# 31. Markdown / HTML safety
+# HTML safety
 
-Generated model content must not be inserted as raw HTML.
+Do not render raw model HTML.
 
-The renderer:
+Use escaped/safe Markdown conversion.
 
-- escapes input
-- supports controlled Markdown
-- validates URLs
-- allows only HTTP/HTTPS links
-- opens external links safely
-
-Do not replace this with raw `innerHTML = modelAnswer`.
+Only allow safe HTTP/HTTPS links.
 
 ---
 
-# 32. References
+# Storage contract
 
-Audit references can be collected from TACO/Case Chat.
+Default browser download.
 
-Knowledge quality instructions require directly relevant underlying sources.
+Optional explicit `showDirectoryPicker()` folder.
 
-Future improvements should continue to reduce irrelevant reference dumping rather than increasing reference volume.
+Storage failure must not change the Audit verdict.
+
+Folder handles remain session-only.
 
 ---
 
-# 33. Storage
+# Save / Restore Session
 
-Default destination:
+Serializable job state can be exported.
+
+Do not serialize browser folder permission handles.
+
+Running/queued work restores as stopped.
+
+Completed results can be preserved.
+
+---
+
+# Overall status contract
+
+Do not derive overall status only from Audit `job.status`.
+
+Knowledge state must influence final XSUP status.
+
+Examples:
 
 ```text
-Browser Downloads
+Knowledge checking/generating → active
+Knowledge queued              → waiting
+Knowledge outdated            → attention
+Knowledge failed              → failed
+Required Knowledge complete   → complete
 ```
 
-Optional:
-
-```text
-showDirectoryPicker()
-```
-
-The folder must be explicitly chosen by the reviewer.
-
-Storage errors must not change the Audit verdict.
-
 ---
 
-# 34. Save / Restore Session
-
-Session schema:
-
-```text
-xsup-auditor-session-v1
-```
-
-The export contains serializable job state.
-
-Folder permission handles are not serialized.
-
-On restore:
-
-- locally running Audit jobs → stopped
-- queued/generating Knowledge → stopped
-- completed data preserved
-- selected folder permission reset to Browser Downloads
-
----
-
-# 35. Stop All
-
-`Stop All` aborts the browser-side controller and clears queued local work.
-
-It cannot guarantee cancellation of a TACO/Case Chat task already accepted by the server.
-
-Do not document it as a server-side task cancellation API.
-
----
-
-# 36. Product change
-
-Product change:
-
-- does not force TACO merely because product selection changed
-- invalidates/re-evaluates product-specific Audit/Knowledge
-- must be disabled/locked during active Case Chat work
-
-Product selection must be part of Audit compatibility.
-
----
-
-# 37. Report generation
-
-Audit HTML includes:
-
-- target metadata
-- product
-- eligibility
-- reviewed fields
-- verdict
-- knowledge action/readiness
-- TACO/Audit source
-- links
-- report body
-- Review Paste Comment
-- references
-
-Knowledge HTML includes:
-
-- target/product/action/readiness/source
-- human-review notice
-- final Knowledge draft
-
----
-
-# 38. Review Paste Comment
-
-This is copyable reviewer content.
-
-The tool does not automatically post it.
-
-User-visible language is **Review Paste Comment**, not an instruction to post into XSUP/Jira automatically.
-
----
-
-# 39. Batch exports
-
-Supported batch actions include:
-
-- all Review Paste Comments
-- combined Audit HTML
-- copied Audit reports
-- combined Knowledge HTML
-- copied Knowledge drafts
-
----
-
-# 40. UI status invariants
-
-Preserve:
-
-- active spinner for running/checking
-- waiting state for queues
-- failed state for failures
-- attention state for outdated Knowledge
-- overall green/completed status only when required Knowledge is complete/skipped
-
-Do not derive overall status from `job.status` alone.
-
----
-
-# 41. Security invariants
+# Security invariants
 
 Do not add:
 
-- embedded secrets
+- embedded credentials
 - credential extraction
-- direct blocked Jira REST
-- CSP bypass
+- direct CSP bypass
 - automatic ticket mutation
 - automatic Knowledge publication
-- silent external telemetry
 - unsafe raw model HTML
+- silent external telemetry
 
 ---
 
-# 42. Data-handling invariants
+# Maintainer invariants
 
-Do not commit real case data into source-control fixtures.
+Preserve:
 
-Use sanitized test material.
-
-Session/debug exports can contain sensitive information.
-
----
-
-# 43. Maintaining product policies
-
-When a product policy changes:
-
-1. update profile eligibility
-2. update applicable field order
-3. update policy prompt text
-4. confirm ticket-field extraction
-5. confirm field parser/output handling
-6. add regression fixtures
-7. verify Product override/reuse invalidation
-8. update PRODUCT_POLICIES.md
-
-Do not modify the common engine unless the change is truly cross-product.
-
----
-
-# 44. Adding another product
-
-Prefer a new profile rather than a new Snippet.
-
-Define:
-
-- key/label
-- detection normalization
-- detection signals
-- eligibility
-- primary field order
-- applicable field rules
-- valid taxonomy
-- prompt policy
-- parsing/validation tests
-
-Then reuse the common engine.
-
----
-
-# 45. Future AI-maintainer invariants
-
-Before an AI coding assistant changes the source, preserve these contracts:
-
-1. One Snippet, not separate per-product forks.
-2. Two Audit workers + one Knowledge worker unless intentionally redesigned.
-3. Product visible in Dashboard/detail.
-4. Lower-confidence Product detection pauses the individual XSUP.
-5. TACO refresh is source/freshness driven, not age driven.
-6. Completed TACO report evaluated before ambiguous running status.
-7. Original evidence provenance remains separate from TACO derived analysis.
-8. `RCA Category` is not actual RCA.
-9. Case Chat history supports `id` and `followup_id`.
-10. Existing running matching Case Chat is waited on, not duplicated.
-11. Source-current compatible results can be reused even when local code/prompt changed.
-12. Regenerate Audit does not rerun TACO.
-13. Regenerate Audit does not silently regenerate Knowledge.
-14. Regenerate Knowledge does not rerun TACO/Audit.
-15. Re-analyze All is the only full refresh.
-16. Overall XSUP status follows required Knowledge state.
-17. Knowledge quality fixes must be broad quality rules, not case-specific patches.
-18. Final Knowledge must strip internal reuse metadata.
-19. Model output is escaped before HTML rendering.
-20. Storage failure must not fail the Audit.
-
----
-
-# 46. Regression testing priorities
-
-Every meaningful change should test:
-
-- XDR/XSIAM case
-- XSOAR case
-- Cortex Cloud case
-- high-confidence Product detection
-- manual Product selection
-- ambiguous Product selection
-- multiple SFDC candidate
-- TACO reuse
-- TACO wait
-- TACO refresh
-- Audit exact reuse
-- Audit source-current compatible reuse
-- Audit new generation
-- Regenerate Audit
-- Knowledge reuse
-- Knowledge queue
-- Knowledge regeneration
-- Knowledge enrichment
-- Knowledge quality PASS
-- DRAFTABLE
-- NOT READY
-- overall status while Knowledge runs
-- report download
-- folder storage
-- Save/Restore Session
-- safe HTML rendering
-
-See [Validation Checklist](VALIDATION_CHECKLIST.md).
+1. one Snippet/common engine
+2. 2 Audit workers + 1 Knowledge worker unless deliberately redesigned
+3. product confirmation on ambiguity
+4. source-driven TACO freshness
+5. original evidence separate from TACO synthesis
+6. RCA Category is not RCA
+7. reuse before duplicate Case Chat
+8. Regenerate Audit does not force TACO/Knowledge
+9. Regenerate Knowledge does not force TACO/Audit
+10. Re-analyze All is full refresh
+11. overall status includes Knowledge
+12. Knowledge quality rules should be generic, not one-case patches
+13. provenance markers cannot leak to final artifacts
+14. never remove `[inference]` while leaving an unsupported claim as fact
+15. one repair pass only
+16. substantive AI FAIL is not automatically overridden
+17. deterministic gate runs after repair
+18. final Knowledge remains a draft for human review

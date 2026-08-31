@@ -1,529 +1,344 @@
 # User Guide
 
-This guide explains how to operate XSUP Retrospective Auditor from start to finish.
-
-For a short introduction, see the repository [README](../README.md).
+This guide explains the XSUP Retrospective Auditor workflow in practical terms.
 
 ---
 
-# 1. What the tool does
+# What the tool does
 
-You provide XSUP IDs.
+For each XSUP, the Auditor can automatically:
 
-The tool automatically:
-
-1. resolves XSUP → SFDC
-2. determines the product
-3. checks TACO Analysis freshness
-4. collects original Jira/SFDC evidence
-5. reuses or generates a Retrospective Audit through TACopilot Case Chat
-6. shows the Support-owned field decision
-7. recommends a knowledge action
-8. reuses or generates the knowledge draft when required
-9. downloads/saves the reports
-
-Case Chat means:
-
-**TACopilot → Case → TACO Analysis → Case Chat**
-
-The tool uses it automatically.
+1. resolve the linked SFDC case
+2. collect original Jira/SFDC evidence
+3. detect the product
+4. check whether TACO Analysis is current
+5. reuse, wait for or refresh TACO
+6. reuse or generate the Retrospective Audit
+7. show Support-owned field decisions
+8. recommend a Knowledge action
+9. reuse or generate the Knowledge artifact
+10. quality-review and validate the Knowledge
+11. save/download the results
 
 ---
 
-# 2. Start the Snippet
-
-## Existing Snippet
+# Start the Snippet
 
 1. Open TACopilot.
 2. Open Chrome DevTools.
-3. Select **Sources**.
-4. Open **Snippets**.
-5. Select **XSUP Retrospective Auditor**.
-6. Run the Snippet.
+3. Go to **Sources → Snippets**.
+4. Run the saved XSUP Retrospective Auditor snippet.
 
-The panel appears on the TACopilot page.
+If the browser page is refreshed, the injected Auditor UI disappears.
 
-## First-time Snippet setup
-
-1. Open Chrome DevTools.
-2. Go to **Sources → Snippets**.
-3. Create a new Snippet.
-4. Paste the complete XSUP Auditor JavaScript.
-5. Save it.
-6. Run it from the TACopilot page.
-
-The source is intentionally a single self-contained browser Snippet. No browser extension is required by this workflow.
+Run the Snippet again.
 
 ---
 
-# 3. Main controls
-
-At the top of the panel:
-
-### XSUP input
+# Run XSUPs
 
 Paste one or more XSUP IDs.
 
-### Run Audit(s)
+Click:
 
-Starts the batch.
+**Run Audit(s)**
 
-### Stop All
+Duplicate IDs are removed.
 
-Stops the auditor's local active/queued work.
+Maximum Audit concurrency:
 
-### Auto-download/save completed audit reports
+**2**
 
-When enabled, completed Audit reports are automatically saved.
+Maximum Knowledge concurrency:
 
-### Auto-generate recommended knowledge drafts
+**1**
 
-When enabled, a recommended KCS/doc/runbook/known-issue draft is automatically queued.
-
-### Product selection
-
-Choose:
-
-- **Auto detect**
-- **Ask me for every XSUP**
-
-### Choose Folder
-
-Optional. Select the approved local/synced destination for generated artifacts.
+Queued work starts automatically.
 
 ---
 
-# 4. Batch behavior
+# Select the product
 
-The tool deliberately separates Audit and Knowledge concurrency.
+Default:
 
-## Audit queue
+**Auto detect**
 
-Maximum:
-
-**2 simultaneous XSUP audits**
-
-If more XSUPs are entered, the remainder queue automatically.
-
-A new queued XSUP starts whenever one Audit worker becomes free.
-
-## Knowledge queue
-
-Maximum:
-
-**1 simultaneous knowledge job**
-
-Knowledge uses a separate worker.
-
-This allows Audit workers to continue reviewing other XSUPs while one KCS/doc/runbook is being generated.
-
----
-
-# 5. Product selection
-
-## Auto detect
-
-The tool evaluates structured case/TACO information and suggests:
+The Auditor uses structured case/TACO evidence to determine:
 
 - XDR/XSIAM
 - XSOAR
 - Cortex Cloud
 
-Only high-confidence automatic selection continues without asking.
+If confidence is low or conflicting, only that XSUP pauses for confirmation.
 
-If detection is uncertain, only that XSUP pauses.
-
-The reviewer chooses the product and the job continues.
-
-## Manual product mode
-
-Select:
+To confirm every XSUP manually, select:
 
 **Ask me for every XSUP**
 
-Each XSUP pauses for product selection after the linked SFDC case is resolved.
-
-## Change Product & Re-run Review
-
-If the wrong product was chosen/detected, select:
-
-**Change Product & Re-run Review**
-
-The current TACO can still be reused if it is current.
-
-The product-specific Audit/Knowledge decision is regenerated.
-
 ---
 
-# 6. SFDC selection
+# Select SFDC when required
 
-Normally the XSUP resolves to one SFDC case.
+If one XSUP maps to multiple possible SFDC cases, that XSUP pauses.
 
-If TACopilot returns multiple possible SFDC mappings, the XSUP pauses and shows:
+Use:
 
 **Choose SFDC**
 
-Select the correct linked case.
-
-Other XSUPs continue.
-
-If no mapping is found, the job shows a mapping failure rather than inventing a case.
+The tool does not guess.
 
 ---
 
-# 7. TACO Analysis
+# TACO behavior
 
-The auditor determines whether TACO needs work.
+The Auditor checks current Jira/SFDC evidence before deciding whether TACO needs to run.
 
-Possible behavior:
+Typical behavior:
 
-### Reuse
+## Reuse
 
-A usable completed TACO exists and current Jira/SFDC activity does not require refresh.
+A usable completed TACO exists and no newer source evidence requires refresh.
 
-### Wait
+## Wait
 
-No usable final report exists yet, but an investigation is genuinely running.
+No usable final result exists yet, but TACO is genuinely running.
 
-The auditor waits rather than starting a duplicate.
+## Start
 
-### Start
+No investigation exists.
 
-No TACO investigation exists.
+## Refresh
 
-### Refresh
+TACO is stale, failed, incomplete or has no usable final result.
 
-The current source indicates TACO is stale, failed or incomplete.
-
-### Manual full refresh
-
-`Re-analyze All` explicitly forces TACO refresh.
+Old age alone does not force a refresh.
 
 ---
 
-# 8. Original evidence
+# Retrospective Audit
 
-The tool reads original case activity from TACopilot.
+The Audit is product-specific and field-centric.
 
-Evidence categories include:
+For each applicable Support-owned field, it should explain:
 
-- Jira/Engineering
-- SFDC internal
-- TAC public
-- customer public
-- Jira ticket event / structured case information
-
-The full source set is used for current-state/freshness and reuse logic.
-
-A bounded, relevant evidence subset is sent to Case Chat to keep the request practical.
-
-This means:
-
-> Selected Case Chat evidence is not proof that something absent from the selected packet never happened.
-
----
-
-# 9. Retrospective Audit
-
-The tool automatically submits the retrospective to Case Chat.
-
-The final result focuses on product-specific Support-owned fields rather than repeating a broad SFDC-quality review.
-
-The report should explain, for every applicable field:
-
-- current value
+- Current Value
 - Correct / INCORRECT / UNDETERMINED
-- whether a change is required
-- recommended value when a change is required
-- detailed explanation
-- important caveat
-- strongest original evidence
-- exact Support action
+- Change Required
+- Recommended Value if needed
+- Detailed Explanation
+- Important Caveat
+- Supporting Evidence
+- Exact Support Action
+
+The tool does not use the Retrospective as a general TAC performance-scoring exercise.
 
 ---
 
-# 10. Review Decisions
+# Analysis & Reuse Status
 
-The **Review Decisions** section is the main operational result.
+The selected XSUP has independent status cards for:
 
-Examples of fields include:
+- TACO Analysis
+- Retrospective Audit
+- Knowledge Artifact
 
-- Resolution
-- RCA
-- Fix Type
-- Flag / Label
-
-Only fields applicable to the selected product policy should be reviewed.
-
-`NOT APPLICABLE` is different from missing data.
+This tells you exactly what was reused and what was newly generated.
 
 ---
 
-# 11. Analysis & Reuse Status
+# Regenerate Audit
 
-The selected XSUP has separate cards for:
+Use when you want a fresh retrospective but current TACO/evidence is sufficient.
 
-### TACO Analysis
-
-Shows reuse/start/refresh information.
-
-### Retrospective Audit
-
-Shows the Case Chat source and allows:
-
-**Regenerate Audit**
-
-### Knowledge Artifact
-
-Shows the Case Chat source/status and allows:
-
-**Regenerate KCS** or **Regenerate Knowledge**
-
-The cards make it possible to see exactly what was reused.
-
----
-
-# 12. Regenerate Audit
-
-Use this when you want only a new Retrospective Audit.
-
-The tool keeps:
-
-- current SFDC mapping
-- current TACO
-- current original evidence
-
-and creates a new Audit Case Chat.
+It does not rerun TACO.
 
 It does not automatically regenerate Knowledge.
 
-If an existing Knowledge artifact was tied to the previous Audit, the tool marks it as outdated/needs regeneration rather than silently replacing it.
-
 ---
 
-# 13. Regenerate Knowledge
+# Regenerate KCS / Regenerate Knowledge
 
-Use this when you want only the Knowledge artifact regenerated.
+Use when you want only the Knowledge artifact rebuilt.
 
-It keeps:
-
-- current TACO
-- current Retrospective Audit
-
-and runs the current Knowledge Enrichment + Quality Review workflow.
-
-The button text is:
-
-- **Regenerate KCS** for KCS artifacts
-- **Regenerate Knowledge** for other artifact types
-
----
-
-# 14. Re-analyze All
-
-Use only for a deliberate complete refresh:
+This runs the current:
 
 ```text
-TACO
+Knowledge Enrichment
  ↓
-Audit
+Independent Quality Review
  ↓
-Knowledge
+Provenance Resolution
+ ↓
+Automatic Repair if required
+ ↓
+Deterministic Gate
 ```
 
-This is not a download button.
+---
 
-Do not use it merely because you want another HTML copy.
+# Re-analyze All
+
+Use when you intentionally want:
+
+```text
+Fresh TACO
+ ↓
+Fresh Audit
+ ↓
+Fresh Knowledge
+```
 
 ---
 
-# 15. Smart reuse on repeat runs
+# Knowledge Quality statuses
 
-When the same XSUP is run again, the tool looks at the current source boundary and Case Chat history.
+## READY
 
-It prefers current reusable results.
+Useful/materially complete and no material validation item remains.
 
-The main principle is:
+## DRAFTABLE
 
-> **Regenerate because the case/source changed, not merely because the auditor source code changed.**
+Useful, but named human validation items remain.
 
-A compatible result can be reused when it remains valid for:
+## NOT READY
 
-- this XSUP/SFDC
-- current TACO/Jira/SFDC source state
-- selected product
-- expected Audit/Knowledge type
-
-If you want a current artifact intentionally rebuilt with newer auditor methodology, use the relevant **Regenerate** button.
+Blocked because the artifact is too incomplete, unsupported or unsafe.
 
 ---
 
-# 16. Knowledge workflow
+# What happens during Knowledge generation?
 
-If Knowledge is recommended and auto-generation is enabled:
+## 1. Enrichment
 
-## Stage 1 — Enrichment + Draft
+The draft is generalized for future reuse.
 
-The AI creates a reusable article rather than simply copying the retrospective.
+## 2. Independent quality review
 
-When useful and actually available to the investigation, it can incorporate:
+A separate AI reviewer checks:
 
-- authoritative product documentation
-- relevant KCS/internal knowledge
-- Confluence/admin/technical guidance
-- Jira/Engineering evidence
-- validated similar SFDC cases
-- known-issue/release-note material
+- accuracy
+- usefulness
+- completeness
+- actionability
+- technical depth
+- sources
+- generalization
+- consistency
+- readability
+- discoverability
+- verification
+- audience fit
 
-## Stage 2 — Independent Quality Review
+## 3. Provenance resolution
 
-A separate Case Chat acts as a knowledge editor.
+Internal analysis markers such as:
 
-It checks broad quality categories and rewrites/finalizes the artifact.
+```text
+[inference]
+[from case data]
+[derived analysis]
+```
 
-The result remains a draft for human review.
+must not appear in final Knowledge.
 
-See [Knowledge Quality](KNOWLEDGE_QUALITY.md).
+The AI must prove/rewrite, validate, or remove those claims safely.
 
----
+## 4. Deterministic gate
 
-# 17. Knowledge readiness
+JavaScript inspects the final text independently.
 
-### READY
+## 5. Repair pass
 
-No material validation item remains.
+If a repairable generic defect remains, one automatic repair pass is allowed.
 
-### DRAFTABLE
-
-Useful draft, but named validation items remain.
-
-### NOT READY
-
-The artifact cannot safely be treated as a useful final draft.
-
-`NOT READY` knowledge is not treated as final downloadable knowledge.
-
----
-
-# 18. Storage
-
-## Browser Downloads
-
-Default.
-
-## Choose Folder
-
-Optional explicit reviewer choice.
-
-The folder can be a normal local folder or an approved desktop-synced location.
-
-Folder permission is controlled by Chrome.
-
-A storage failure should not change the Audit decision.
+The result is checked again.
 
 ---
 
-# 19. Save Session
+# Why DRAFTABLE is not a failure
 
-Use **Save Session** before refreshing/closing if you want to preserve the local workspace.
+DRAFTABLE means:
 
-The exported JSON contains the current job state.
+> This is useful Knowledge, but one or more material details still need human confirmation.
 
-It does not serialize the Chrome folder permission object.
+For example:
+
+```text
+Core product behavior is supported.
+Exact console path and API request schema still need documentation-owner validation.
+```
+
+That can be a useful DRAFTABLE article.
 
 ---
 
-# 20. Restore Session
+# Downloads
 
-1. Run the Snippet again.
-2. Click **Restore Session**.
-3. Choose the saved session JSON.
+Default:
 
-Jobs that were actively running when saved are restored as stopped.
+**Browser Downloads**
+
+Optional:
+
+**Choose Folder**
+
+The selected folder can be an approved local or desktop-synced location.
+
+---
+
+# Save / Restore Session
+
+## Save Session
+
+Downloads current local Auditor state as JSON.
+
+## Restore Session
+
+After rerunning the Snippet:
+
+1. click Restore Session
+2. select the saved JSON
+
+Active jobs restore as stopped.
 
 Completed data is preserved.
 
-You can then decide what to rerun.
+---
+
+# Stop All
+
+Stops local Auditor processing and queues.
+
+Server-side TACO/Case Chat requests already submitted may continue.
 
 ---
 
-# 21. Browser refresh
+# Before making a ticket change
 
-A browser refresh removes the injected panel.
+Verify:
 
-Run the Snippet again.
-
-Then either:
-
-- rerun the XSUP and allow Smart Reuse to recover current server-side results, or
-- restore a saved session
-
----
-
-# 22. Stop All
-
-`Stop All`:
-
-- aborts local auditor requests/polling as far as possible
-- marks queued work stopped
-- clears local Audit/Knowledge queues
-
-A server-side task already submitted to TACO/Case Chat may continue.
-
-Check TACopilot directly when required.
+1. correct XSUP/SFDC
+2. correct product
+3. current TACO
+4. strongest original evidence
+5. field decision
+6. important caveats
+7. exact Support action
 
 ---
 
-# 23. Reports
+# Before publishing Knowledge
 
-## Audit report
+Verify:
 
-Contains:
+1. Validated Readiness
+2. Quality Summary
+3. Validation Items
+4. Source References
+5. exact commands/APIs/UI paths/version/timings when present
+6. generalization/privacy
+7. intended documentation destination
 
-- XSUP / SFDC
-- Product
-- Eligibility
-- Reviewed fields
-- Review verdict
-- TACO/Audit source
-- case summary
-- technical evidence
-- Support-owned field decisions
-- knowledge action
-- review paste comment
-- references
+Even READY means:
 
-## Knowledge artifact
-
-Contains the structure appropriate to the artifact type.
-
-It is always a draft for review.
-
----
-
-# 24. What the user should verify
-
-Before acting on a recommendation:
-
-1. Confirm the correct XSUP/SFDC.
-2. Confirm the selected product.
-3. Read the Support-owned field decision.
-4. Check the strongest original evidence.
-5. Confirm any proposed ticket change.
-6. Review Knowledge before publication.
-7. Treat `UNDETERMINED`, `DRAFTABLE`, validation warnings and failed quality checks seriously.
-
----
-
-# 25. Where to look when something is confusing
-
-Start with:
-
-1. **Live Dashboard**
-2. **Analysis & Reuse Status**
-3. **Execution Pipeline**
-4. **Review Decisions**
-5. **Knowledge Artifact**
-6. **TACopilot → Case → TACO Analysis → Case Chat**
-
-Then see [Troubleshooting](TROUBLESHOOTING.md).
+**ready for human review**, not automatically approved/published.

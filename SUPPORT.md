@@ -1,18 +1,18 @@
 # Support
 
-XSUP Retrospective Auditor is an **internal, unofficial tool used for the APAC Cortex TAC XSUP retrospective workflow**.
-
-It is owned and maintained internally by the tool author/maintainer.
+XSUP Retrospective Auditor is an internal, unofficial tool for the APAC Cortex TAC XSUP retrospective workflow.
 
 It is not an officially supported product and does not have a formal product SLA.
 
-For tool problems or questions, contact the internal tool owner/maintainer.
+For tool questions/problems, contact the internal tool owner/maintainer.
 
-Users are responsible for:
+Before reporting a tool defect, capture:
 
-- validating the output before acting on it
-- following normal TAC processes
-- handling downloaded customer/internal information appropriately
-- sharing generated information only through approved channels
+- expected behavior
+- actual behavior
+- Analysis & Reuse Status
+- Execution Pipeline status
+- Knowledge Quality Summary / Validation Items when relevant
+- sanitized console/debug detail when required
 
-If a result looks wrong, stop and verify the original TACO/Jira/SFDC evidence before making a ticket change.
+Do not place customer-sensitive case data into an unapproved GitHub issue.

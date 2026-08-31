@@ -2,9 +2,7 @@
 
 XSUP Retrospective Auditor is an internal, unofficial APAC Cortex TAC workflow tool.
 
-It can process customer/internal Support information.
-
-Use it with the same care as the underlying TACopilot/Jira/SFDC case.
+It can process sensitive customer/internal Support information.
 
 ---
 
@@ -14,144 +12,112 @@ The Snippet runs inside the reviewer's authenticated TACopilot browser session.
 
 It is designed to:
 
-- use the reviewer's existing TACopilot permissions
+- use the reviewer's existing permissions
 - use same-origin TACopilot requests
-- avoid embedding usernames/passwords/API secrets
-- avoid extracting browser credentials for use elsewhere
-- avoid bypassing browser/CSP/corporate controls
-
-It does not intentionally elevate access.
+- avoid embedded credentials/secrets
+- avoid credential extraction
+- avoid security-control bypasses
 
 ---
 
-# Data processed
+# Data handled
 
-Depending on the XSUP, the tool may process:
+Depending on the case, the tool may process:
 
-- XSUP identifiers
-- SFDC case identifiers
-- Jira/Engineering evidence
+- XSUP/SFDC identifiers
+- Jira Engineering evidence
 - SFDC internal/public/customer comments
-- structured case/taxonomy fields
+- structured ticket/case fields
 - TACO Analysis
 - Case Chat questions/results
-- generated retrospective/knowledge content
+- generated Audit/Knowledge content
 
-This information can be sensitive.
+Treat generated files as internal case artifacts.
 
 ---
 
-# What the tool does not automatically do
+# The tool does not automatically
 
-It does not automatically:
-
-- update Jira
-- update Salesforce
-- post the Review Paste Comment
-- publish KCS/docs/runbooks
+- modify Jira
+- modify Salesforce
+- post Review Paste Comments
+- publish Knowledge
 - upload reports to GitHub
-- send case content to arbitrary external services
+- send case data to arbitrary external services
 
 ---
 
-# Local storage
+# Storage
 
-Reports use browser downloads unless the user explicitly chooses a writable folder.
+Default:
 
-The user is responsible for choosing an approved storage location.
+Browser Downloads.
 
-Desktop-sync behavior is controlled by the selected folder's sync client and company policy.
+Optional:
+
+reviewer-selected approved local/synced folder.
+
+The reviewer is responsible for the storage location.
 
 ---
 
-# Saved sessions
+# Save Session files
 
 Session JSON can contain case/audit information.
 
-Treat session files as sensitive internal artifacts.
+Treat it as sensitive.
 
-Do not commit them to GitHub.
-
-Folder permission handles are not included in session JSON.
+Do not commit it to GitHub.
 
 ---
 
 # GitHub
 
-The repository should contain:
+Use GitHub for:
 
 - source
-- generic documentation
-- sanitized examples/fixtures where approved
+- generic docs
+- sanitized fixtures/examples when approved
 
-It should not contain real customer/case evidence.
+Do not commit real:
 
-Never commit:
-
-- passwords
-- API keys
-- session cookies
-- bearer tokens
-- raw browser-auth material
-- real customer reports
-- raw support bundles/logs unless explicitly approved and sanitized
+- customer case history
+- reports
+- session exports
+- support bundles/logs
+- cookies/tokens
+- API keys/passwords
 
 ---
 
-# Generated AI content
+# AI output
 
-Audit and Knowledge output can be wrong.
+AI can be wrong.
 
-The user remains responsible for validating important conclusions before:
-
-- changing ticket metadata
-- sharing a report
-- publishing knowledge
-- using generated operational guidance
+Quality review and deterministic checks reduce risk but do not replace human validation.
 
 ---
 
-# InfoSec / compliance statement
+# Formal approval
 
-Do not claim that the repository/tool is formally:
+Do not claim formal:
 
-- InfoSec approved
-- security certified
-- privacy certified
-- production certified
-- compliant with a specific security standard
+- InfoSec approval
+- certification
+- compliance
+- production approval
 
-unless that approval has actually been granted through the appropriate company process.
-
-A safe description is:
-
-> Internal browser-based decision-support tool using the reviewer's existing TACopilot access. It does not intentionally store credentials or automatically modify tickets. Outputs require human review.
+unless that approval has actually been granted.
 
 ---
 
 # Corporate controls
 
-Do not use the auditor to bypass:
+Do not use the Auditor to bypass:
 
 - authentication
 - authorization
-- Content Security Policy
+- CSP
 - DLP
-- managed browser policy
-- download restrictions
-- endpoint controls
-- approved software-distribution rules
-
-If a control blocks a function, use the normal approved process rather than working around it.
-
----
-
-# User responsibility
-
-Users are responsible for:
-
-- using the correct case/product
-- reviewing AI-generated output
-- handling downloaded data appropriately
-- sharing only with authorized recipients
-- following applicable company security/privacy/data-handling requirements
+- managed-browser restrictions
+- approved software/download controls
