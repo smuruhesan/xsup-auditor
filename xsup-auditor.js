@@ -15,6 +15,7 @@ Runtime model
 - Automatic TACO freshness: reuse current analysis, wait for a running analysis, or refresh only when current evidence requires it.
 - Audit and knowledge Case Chat results are fingerprinted and reused only when their current inputs still match.
 - Fresh knowledge uses enrichment -> independent quality review -> deterministic safety gate, with one evidence-bounded repair pass for generic output/provenance defects.
+- Human-facing Knowledge review annotations render as compact color-coded inline chips; dashboards/cards use the same semantic color language.
 
 Artifact storage
 - Default: browser Downloads.
@@ -87,6 +88,68 @@ CORTEX CLOUD RETROSPECTIVE POLICY
   });
 
   const PRODUCT_KEYS = Object.freeze(Object.keys(PRODUCT_PROFILES));
+
+  // Human-facing review annotations used inside generated Knowledge artifacts.
+  // These are intentionally distinct from raw TACO provenance markers such as
+  // [inference]. The latter must be resolved before final Knowledge is accepted.
+  const REVIEW_MARKER_GUIDE = Object.freeze({
+    SME_REVIEW: Object.freeze({
+      label: "SME REVIEW",
+      icon: "⚠",
+      tone: "amber",
+      meaning: "A product behavior, timing, UI path, configuration, or operational detail needs subject-matter validation.",
+      action: "Confirm with an appropriate SME or authoritative source. If it cannot be confirmed, rewrite, move to Validation Items, or remove the claim."
+    }),
+    ENGINEERING_REVIEW: Object.freeze({
+      label: "ENGINEERING REVIEW",
+      icon: "⚙",
+      tone: "amber",
+      meaning: "A backend, architecture, API, or implementation detail needs Engineering confirmation.",
+      action: "Confirm against original Engineering evidence or obtain Engineering review before treating the detail as fact."
+    }),
+    INFERENCE: Object.freeze({
+      label: "INFERENCE",
+      icon: "◇",
+      tone: "purple",
+      meaning: "The statement is derived from available evidence but is not directly established.",
+      action: "Support it with an underlying source, move it to Validation Items, or remove it. An unresolved material inference cannot be READY."
+    }),
+    SOURCE_CHECK: Object.freeze({
+      label: "SOURCE CHECK",
+      icon: "🔎",
+      tone: "purple",
+      meaning: "The claim needs a stronger or more direct underlying source.",
+      action: "Locate/confirm the authoritative source, or rewrite/remove the claim if the source cannot be established."
+    }),
+    SCOPE_CHECK: Object.freeze({
+      label: "SCOPE CHECK",
+      icon: "🧭",
+      tone: "amber",
+      meaning: "Version, operating-system, platform, tenant, or applicability scope still needs confirmation.",
+      action: "Confirm the supported scope and narrow the wording if the claim does not apply universally."
+    }),
+    RECOMMENDATION: Object.freeze({
+      label: "RECOMMENDATION",
+      icon: "ℹ",
+      tone: "blue",
+      meaning: "Helpful guidance or a best-practice recommendation rather than mandatory product behavior.",
+      action: "Confirm it is appropriate for the intended audience and keep it clearly framed as guidance."
+    }),
+    CONFIRMED: Object.freeze({
+      label: "CONFIRMED",
+      icon: "✓",
+      tone: "green",
+      meaning: "An important statement is directly supported by an appropriate underlying source or original Engineering evidence.",
+      action: "No additional validation is required unless the source or applicability scope changes."
+    }),
+    UNSUPPORTED: Object.freeze({
+      label: "UNSUPPORTED",
+      icon: "✕",
+      tone: "red",
+      meaning: "A material claim does not currently have sufficient support.",
+      action: "Do not publish the claim. Support, rewrite, or remove it before the artifact can pass the final gate."
+    })
+  });
 
 
   if (!location.hostname.includes("taco-dashm.paloaltonetworks.com")) {
@@ -543,6 +606,346 @@ CORTEX CLOUD RETROSPECTIVE POLICY
     return out.join("");
   }
 
+
+  function reviewMarkerPattern() {
+    return /\[\[(SME_REVIEW|ENGINEERING_REVIEW|INFERENCE|SOURCE_CHECK|SCOPE_CHECK|RECOMMENDATION|CONFIRMED|UNSUPPORTED)(?:\|([^\]\r\n]{1,700}))?\]\]/gi;
+  }
+
+  function parseKnowledgeReviewMarkers(text) {
+    const markers = [];
+    String(text || "").replace(reviewMarkerPattern(), (_, type, reason) => {
+      const key = String(type || "").toUpperCase();
+      if (!REVIEW_MARKER_GUIDE[key]) return _;
+      markers.push({
+        type: key,
+        reason: cleanText(reason || "")
+      });
+      return _;
+    });
+    return markers;
+  }
+
+  function isMaterialReviewMarker(type) {
+    return ["SME_REVIEW", "ENGINEERING_REVIEW", "INFERENCE", "SOURCE_CHECK", "SCOPE_CHECK", "UNSUPPORTED"]
+      .includes(String(type || "").toUpperCase());
+  }
+
+  function reviewMarkerStats(text) {
+    const markers = parseKnowledgeReviewMarkers(text);
+    const unique = arr => {
+      const seen = new Set();
+      return arr.filter(m => {
+        const key = `${m.type}\u001f${cleanText(m.reason || "").toLowerCase()}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    };
+    const material = unique(markers.filter(m => isMaterialReviewMarker(m.type)));
+    const blockers = unique(markers.filter(m => m.type === "UNSUPPORTED"));
+    return { markers, material, blockers };
+  }
+
+  function reviewMarkerTooltip(marker) {
+    const def = REVIEW_MARKER_GUIDE[marker?.type] || REVIEW_MARKER_GUIDE.SME_REVIEW;
+    const note = cleanText(marker?.reason || "");
+    return `${def.meaning} Action: ${def.action}${note ? ` Review note: ${note}` : ""}`;
+  }
+
+  function reviewMarkerChipHtml(marker) {
+    const def = REVIEW_MARKER_GUIDE[marker?.type];
+    if (!def) return "";
+    const tip = reviewMarkerTooltip(marker);
+    return `<span class="xa-review-chip xa-review-${escapeHtml(def.tone)}" data-review-type="${escapeHtml(marker.type)}" data-tooltip="${escapeHtml(tip)}" title="${escapeHtml(tip)}">${escapeHtml(def.icon)} ${escapeHtml(def.label)}</span>`;
+  }
+
+  function reviewMarkerGuideHtml() {
+    const rows = Object.entries(REVIEW_MARKER_GUIDE).map(([type, def]) => `
+      <tr>
+        <td>${reviewMarkerChipHtml({ type, reason: "" })}</td>
+        <td>${escapeHtml(def.meaning)}</td>
+        <td>${escapeHtml(def.action)}</td>
+      </tr>
+    `).join("");
+
+    return `
+      <details class="xa-review-guide">
+        <summary>Review Marker Guide</summary>
+        <div class="xa-review-guide-body">
+          <p>Colored markers appear beside the exact statement that needs attention. Resolve material amber, purple, or red items before publication. Green is confirmed; blue is informational/recommendation.</p>
+          <div class="xa-review-guide-table-wrap">
+            <table class="xa-review-guide-table">
+              <thead><tr><th>Marker</th><th>What it means</th><th>Reviewer action</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>
+      </details>
+    `;
+  }
+
+  function semanticTone(value, context = "general") {
+    const v = normalizeDecision(value);
+    if (!v || v === "—") return "gray";
+
+    if (context === "verdict") {
+      if (v === "CORRECT") return "green";
+      if (v === "INCORRECT") return "red";
+      if (v === "UNDETERMINED") return "amber";
+      return "gray";
+    }
+
+    if (context === "change") {
+      if (v === "YES") return "red";
+      if (v === "NO") return "green";
+      if (["N/A", "NOT APPLICABLE"].includes(v)) return "gray";
+      if (v === "UNDETERMINED") return "amber";
+      return "gray";
+    }
+
+    if (context === "readiness") {
+      if (v === "READY") return "green";
+      if (v === "DRAFTABLE") return "amber";
+      if (v === "NOT READY") return "red";
+      if (v === "NOT APPLICABLE") return "gray";
+      return "gray";
+    }
+
+    if (context === "evidence") {
+      if (["SUPPORTED", "YES"].includes(v)) return "green";
+      if (["PARTIAL", "UNDETERMINED", "NO"].includes(v)) return "amber";
+      if (v === "NOT SUPPORTED") return "red";
+      return "gray";
+    }
+
+    if (context === "eligibility") {
+      if (v === "IN SCOPE") return "blue";
+      if (v === "OUT OF SCOPE") return "gray";
+      if (v === "UNDETERMINED") return "amber";
+      return "gray";
+    }
+
+    if (context === "operational") {
+      if (/FAILED|NOT READY/.test(v)) return "red";
+      if (/WAIT|QUEUED|ACTION|ATTENTION/.test(v)) return "amber";
+      if (/RUN|CHECK|GENERAT|REUSE|REFRESH|NEW/.test(v)) return "blue";
+      if (/COMPLETE|READY/.test(v)) return "green";
+      return "gray";
+    }
+
+    if (context === "info") return "blue";
+    return "gray";
+  }
+
+  function semanticTooltip(value, context = "general") {
+    const v = normalizeDecision(value);
+    if (context === "readiness") {
+      if (v === "READY") return "Useful, materially complete draft with no material validation item remaining. Human review is still required before publication.";
+      if (v === "DRAFTABLE") return "Useful draft, but one or more material validation/review items remain. Resolve them before publication.";
+      if (v === "NOT READY") return "A material evidence, quality, provenance, or structure problem remains. The draft is kept visible for review, but must not be published as-is.";
+    }
+    if (context === "verdict") {
+      if (v === "CORRECT") return "The current Support-owned field value is supported; no field change is recommended.";
+      if (v === "INCORRECT") return "The current Support-owned field value is not supported; a change is recommended.";
+      if (v === "UNDETERMINED") return "Evidence is insufficient to make the field decision safely.";
+    }
+    if (context === "change") {
+      if (v === "YES") return "A Support-owned ticket field change is recommended.";
+      if (v === "NO") return "No Support-owned ticket field change is recommended.";
+      if (["N/A", "NOT APPLICABLE"].includes(v)) return "This field/change is not applicable to the selected retrospective policy.";
+      if (v === "UNDETERMINED") return "The evidence is insufficient to decide whether a change is required.";
+    }
+    if (context === "evidence") {
+      if (v === "SUPPORTED") return "The technical conclusion is supported by the available evidence.";
+      if (v === "NOT SUPPORTED") return "The available evidence does not support the technical conclusion.";
+      if (v === "PARTIAL") return "Only part of the conclusion is independently confirmed.";
+      if (v === "UNDETERMINED") return "The available evidence is insufficient to decide safely.";
+      if (v === "YES") return "Original Engineering/Jira evidence independently confirms the conclusion.";
+      if (v === "NO") return "Independent Engineering confirmation was not established from the supplied original evidence.";
+    }
+    if (context === "eligibility") {
+      if (v === "IN SCOPE") return "The current ticket values match this product's retrospective trigger.";
+      if (v === "OUT OF SCOPE") return "The current ticket values are established and do not match this product's retrospective trigger.";
+      if (v === "UNDETERMINED") return "The trigger field value could not be established safely.";
+    }
+    return "";
+  }
+
+
+  function semanticChipHtml(value, context = "general", tooltip = "") {
+    const shown = String(value || "—").trim() || "—";
+    const tone = semanticTone(shown, context);
+    const tip = tooltip || semanticTooltip(shown, context);
+    const icon = tone === "green" ? "✓" : tone === "red" ? "✕" : tone === "amber" ? "⚠" : tone === "purple" ? "◇" : tone === "blue" ? "ℹ" : "•";
+    return `<span class="xa-semantic-chip xa-semantic-${tone}"${tip ? ` data-tooltip="${escapeHtml(tip)}" title="${escapeHtml(tip)}"` : ""}>${escapeHtml(icon)} ${escapeHtml(shown)}</span>`;
+  }
+
+  function changeDecisionChipHtml(value) {
+    const v = normalizeDecision(value);
+    const shown =
+      v === "YES" ? "CHANGE REQUIRED" :
+      v === "NO" ? "NO CHANGE" :
+      ["N/A", "NOT APPLICABLE"].includes(v) ? "NOT APPLICABLE" :
+      v === "UNDETERMINED" ? "REVIEW REQUIRED" :
+      v || "—";
+    const tone = semanticTone(v, "change");
+    const tip = semanticTooltip(v, "change");
+    const icon = tone === "green" ? "✓" : tone === "red" ? "✕" : tone === "amber" ? "⚠" : "•";
+    return `<span class="xa-semantic-chip xa-semantic-${tone}"${tip ? ` data-tooltip="${escapeHtml(tip)}" title="${escapeHtml(tip)}"` : ""}>${escapeHtml(icon)} ${escapeHtml(shown)}</span>`;
+  }
+
+  function jobChangeNeededText(job) {
+    const hasChange = [job?.resolutionChangeNeeded, job?.rcaChangeNeeded, job?.fixTypeChangeNeeded, job?.labelChangeNeeded]
+      .some(v => /^yes$/i.test(v || ""));
+    if (hasChange) return "YES";
+
+    const eligibility = normalizeDecision(job?.retrospectiveEligibility);
+    if (eligibility === "OUT OF SCOPE") return "N/A";
+
+    const applicable = [job?.resolutionChangeNeeded, job?.rcaChangeNeeded, job?.fixTypeChangeNeeded, job?.labelChangeNeeded]
+      .filter(v => v && !/^(not applicable|n\/a)$/i.test(v));
+    if (applicable.some(v => /^no$/i.test(v))) return "NO";
+    if (job?.auditAnswer) return "UNDETERMINED";
+    return "—";
+  }
+
+  function knowledgeReviewCount(job) {
+    const stats = reviewMarkerStats(job?.knowledgeAnswer || "");
+    if (stats.material.length) return stats.material.length;
+    const validation = cleanText(job?.knowledgeQualityValidationItems || "");
+    if (!validation || /^(none|none identified|n\/a|not applicable)$/i.test(validation)) return 0;
+    const pieces = validation.split(/(?:\r?\n|\s*;\s*|\s+·\s+|\s+-\s+)/).map(cleanText).filter(Boolean);
+    return Math.max(1, pieces.length);
+  }
+
+  function readinessChipHtml(jobOrValue) {
+    const value = typeof jobOrValue === "object"
+      ? (jobOrValue?.validatedArtifactReadiness || jobOrValue?.artifactReadiness || "—")
+      : jobOrValue;
+    return semanticChipHtml(value, "readiness");
+  }
+
+  function knowledgeMarkdownToHtml(markdown) {
+    let text = stripInternalKnowledgeMetadata(markdown || "");
+    const markers = [];
+    text = text.replace(reviewMarkerPattern(), (_, type, reason) => {
+      const marker = { type: String(type || "").toUpperCase(), reason: cleanText(reason || "") };
+      const token = `@@XA_REVIEW_CHIP_${markers.length}@@`;
+      markers.push({ token, marker });
+      return token;
+    });
+
+    let html = safeMarkdownToHtml(text);
+    for (const item of markers) {
+      html = html.split(item.token).join(reviewMarkerChipHtml(item.marker));
+    }
+    return html;
+  }
+
+  function knowledgeTextForCopy(text) {
+    return stripInternalKnowledgeMetadata(text || "").replace(reviewMarkerPattern(), (_, type, reason) => {
+      const marker = { type: String(type || "").toUpperCase(), reason: cleanText(reason || "") };
+      const def = REVIEW_MARKER_GUIDE[marker.type];
+      if (!def) return "";
+      return ` ${def.icon} ${def.label}${marker.reason ? ` — ${marker.reason}` : ""}`;
+    });
+  }
+
+  function knowledgeReviewFooterHtml(job) {
+    if (!job) return "";
+    const stats = reviewMarkerStats(job.knowledgeAnswer || "");
+    const material = stats.material;
+    const validation = cleanText(job.knowledgeQualityValidationItems || "");
+    const hasValidation = Boolean(validation && !/^(none|none identified|n\/a|not applicable)$/i.test(validation));
+    const count = knowledgeReviewCount(job);
+
+    const markerRows = material.map((m, i) => `
+      <li>
+        ${reviewMarkerChipHtml(m)}
+        <span>${escapeHtml(m.reason || REVIEW_MARKER_GUIDE[m.type]?.meaning || "Review required")}</span>
+      </li>
+    `).join("");
+
+    const reviewDetails = (markerRows || hasValidation) ? `
+      <details class="xa-review-details">
+        <summary>Review &amp; Validation Items${count ? ` (${count})` : ""}</summary>
+        <div class="xa-review-details-body">
+          ${markerRows ? `<ol class="xa-review-item-list">${markerRows}</ol>` : ""}
+          ${hasValidation ? `<div class="xa-review-validation-summary"><strong>Quality-review validation summary</strong><p>${escapeHtml(validation)}</p></div>` : ""}
+        </div>
+      </details>
+    ` : "";
+
+    const qualityDetails = (job.knowledgeQualitySummary || job.knowledgeQualityStatus || hasValidation) ? `
+      <details class="xa-quality-details">
+        <summary>Quality details</summary>
+        <div class="xa-quality-details-body">
+          ${job.knowledgeQualityStatus ? `<p><strong>Internal quality result:</strong> ${escapeHtml(job.knowledgeQualityStatus)}</p>` : ""}
+          ${job.knowledgeQualitySummary ? `<p><strong>Summary:</strong> ${escapeHtml(job.knowledgeQualitySummary)}</p>` : ""}
+          ${hasValidation ? `<p><strong>Validation:</strong> ${escapeHtml(validation)}</p>` : ""}
+          <p>The primary human-facing Knowledge status is ${readinessChipHtml(job)}.</p>
+        </div>
+      </details>
+    ` : "";
+
+    return `<div class="xa-review-footer">${reviewDetails}${qualityDetails}${reviewMarkerGuideHtml()}</div>`;
+  }
+
+
+  function auditStatusGuideHtml() {
+    const rows = [
+      { marker: semanticChipHtml("IN SCOPE", "eligibility"), meaning: "The ticket matches the selected product retrospective criteria.", action: "Continue the retrospective review." },
+      { marker: semanticChipHtml("Correct", "verdict"), meaning: "The current Support-owned field value is supported.", action: "Retain the current value." },
+      { marker: semanticChipHtml("INCORRECT", "verdict"), meaning: "The current Support-owned field value is not supported.", action: "Review the recommended field change." },
+      { marker: changeDecisionChipHtml("NO"), meaning: "No Support-owned field update is recommended.", action: "No ticket-field action is required." },
+      { marker: changeDecisionChipHtml("YES"), meaning: "A Support-owned field update is recommended.", action: "Apply the recommended change through the normal approved workflow." },
+      { marker: semanticChipHtml("READY", "readiness"), meaning: "The draft is materially complete with no material validation item remaining.", action: "Human publication review is still required." },
+      { marker: semanticChipHtml("DRAFTABLE", "readiness"), meaning: "The draft is useful, but one or more material reviews/validations remain.", action: "Resolve the highlighted review items before publication." },
+      { marker: semanticChipHtml("NOT READY", "readiness"), meaning: "The draft contains a material blocker or unresolved quality/evidence problem.", action: "The draft remains visible for review, but should not be published as-is." },
+      ...Object.entries(REVIEW_MARKER_GUIDE).map(([type, def]) => ({
+        marker: reviewMarkerChipHtml({ type, reason: "" }),
+        meaning: def.meaning,
+        action: def.action
+      }))
+    ];
+
+    return `
+      <details class="xa-review-guide">
+        <summary>Status &amp; Review Marker Guide</summary>
+        <div class="xa-review-guide-body">
+          <p>Use the colored bubble itself as the visual cue. Color is always paired with an icon and text so meaning does not depend on color alone.</p>
+          <div class="xa-review-guide-table-wrap">
+            <table class="xa-review-guide-table">
+              <thead><tr><th>Status / marker</th><th>What it means</th><th>Reviewer action</th></tr></thead>
+              <tbody>${rows.map(r => `<tr><td>${r.marker}</td><td>${escapeHtml(r.meaning)}</td><td>${escapeHtml(r.action)}</td></tr>`).join("")}</tbody>
+            </table>
+          </div>
+        </div>
+      </details>
+    `;
+  }
+
+  function auditMarkdownToHtml(markdown) {
+    let html = safeMarkdownToHtml(markdown || "");
+    const rules = [
+      { labels: ["Retrospective Eligibility"], values: "IN SCOPE|OUT OF SCOPE|UNDETERMINED", context: "eligibility" },
+      { labels: ["Technical Conclusion Evidence"], values: "SUPPORTED|NOT SUPPORTED|UNDETERMINED", context: "evidence" },
+      { labels: ["Engineering Confirmation"], values: "YES|NO|PARTIAL|UNDETERMINED", context: "evidence" },
+      { labels: ["Resolution Verdict", "RCA Verdict", "Fix Type Verdict", "Flag / Label Verdict"], values: "Correct|INCORRECT|UNDETERMINED", context: "verdict" },
+      { labels: ["Change Required", "Resolution Change Needed", "RCA Change Needed", "Fix Type Change Needed", "Label Change Needed"], values: "YES|NO|UNDETERMINED|NOT APPLICABLE|N/A", context: "change" },
+      { labels: ["Artifact Readiness", "Validated Artifact Readiness", "Validated Readiness"], values: "READY|DRAFTABLE|NOT READY|NOT APPLICABLE", context: "readiness" }
+    ];
+
+    for (const rule of rules) {
+      for (const label of rule.labels) {
+        const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const re = new RegExp(`(<strong>${escaped}:<\\/strong>\\s*)(${rule.values})(?=\\s|<|$)`, "gi");
+        html = html.replace(re, (_, prefix, value) => `${prefix}${rule.context === "change" ? changeDecisionChipHtml(value) : semanticChipHtml(value, rule.context)}`);
+      }
+    }
+    return html;
+  }
+
   function formatElapsed(ms) {
     const total = Math.max(0, Math.floor(ms / 1000));
     const m = Math.floor(total / 60);
@@ -637,7 +1040,7 @@ CORTEX CLOUD RETROSPECTIVE POLICY
     out.classList.toggle("xa-report-empty", !hasText);
 
     out.innerHTML = hasText
-      ? safeMarkdownToHtml(text)
+      ? auditMarkdownToHtml(text)
       : '<div class="xa-report-placeholder">Final audit report will appear here...</div>';
   }
 
@@ -2129,6 +2532,28 @@ MANDATORY REVIEW ACTIONS
 - Do not use the originating XSUP/SFDC ID as a reusable search keyword.
 - Do not say "publish" as an already-approved action. This remains a draft for human review.
 
+INLINE REVIEW ANNOTATIONS
+Use the following exact compact markers immediately AFTER the specific sentence, command, path, API, timing, architecture statement, or recommendation they apply to. The HTML renderer converts them into small colored review chips with tooltips:
+- [[SME_REVIEW|concise reason]] — product behavior, timing, UI/configuration, or operational detail needs SME validation.
+- [[ENGINEERING_REVIEW|concise reason]] — backend, architecture, API, or implementation detail needs Engineering confirmation.
+- [[INFERENCE|concise reason]] — useful derived conclusion is not directly established by the supplied underlying evidence.
+- [[SOURCE_CHECK|concise reason]] — claim needs a stronger/direct underlying source.
+- [[SCOPE_CHECK|concise reason]] — version/OS/platform/applicability scope needs confirmation.
+- [[RECOMMENDATION|concise reason]] — helpful guidance/best practice rather than mandatory product behavior. This is normally non-blocking.
+- [[CONFIRMED|concise source cue]] — use sparingly for an important conclusion directly confirmed by an underlying authoritative/Engineering source.
+- [[UNSUPPORTED|concise reason]] — material claim is not sufficiently supported and cannot safely remain as written.
+
+ANNOTATION RULES
+1. Do not over-annotate ordinary supported prose. Mark only specific facts that materially help a reviewer understand confidence/action.
+2. Every material Validation Item should have an inline SME/Engineering/Inference/Source/Scope marker at the affected statement when a specific statement exists. Repeat the same marker at the start of the corresponding Validation Items bullet so the review need is also color-coded there. If there is no single affected statement, placing the marker in the Validation Items bullet is sufficient.
+3. Do not use [[CONFIRMED]] merely because TACO says something. It requires an underlying source or original Engineering evidence.
+4. [[SME_REVIEW]], [[ENGINEERING_REVIEW]], [[INFERENCE]], [[SOURCE_CHECK]], and [[SCOPE_CHECK]] are material review items. If any remain, final readiness must be DRAFTABLE unless the artifact has a stronger blocker.
+5. [[UNSUPPORTED]] is a blocker. Rewrite/remove/support the claim before PASS; otherwise return FAIL + NOT READY.
+6. [[RECOMMENDATION]] is informational and does not by itself prevent READY.
+7. These human-facing [[...]] annotations are allowed in the final draft. Raw internal markers [inference], [from case data], [derived analysis], and [XSUP-AUDITOR-META] are NOT allowed.
+8. Never solve uncertainty by deleting a raw provenance marker while leaving the unsupported claim as a confirmed fact.
+9. For fenced code blocks, place the review marker immediately AFTER the closing Markdown code fence or in the explanatory sentence beside the block; do not place review-marker syntax inside executable code.
+
 PROVENANCE RESOLUTION — MANDATORY
 The retrospective or enriched draft may contain internal analytical markers such as:
 [inference], [from case data], [derived analysis].
@@ -2234,6 +2659,10 @@ REPAIR RULES
 8. Repair missing/incorrect required sections, Markdown/code-fence problems, reusable Search Keywords, and Source References using only information already supported by the supplied material.
 9. Source References must identify underlying sources. Do not use TACO or Case Chat alone as the source.
 10. This remains a draft for human review. Do not state that it has been published or formally approved.
+11. Preserve/add the allowed human-facing inline review annotations when they help the reviewer act on a specific claim:
+    [[SME_REVIEW|reason]], [[ENGINEERING_REVIEW|reason]], [[INFERENCE|reason]], [[SOURCE_CHECK|reason]], [[SCOPE_CHECK|reason]], [[RECOMMENDATION|reason]], [[CONFIRMED|source cue]].
+12. Material human review annotations require DRAFTABLE. [[UNSUPPORTED|reason]] must not survive a PASS result; support/rewrite/remove the claim or return FAIL + NOT READY.
+13. Do not confuse allowed [[...]] review annotations with forbidden raw internal provenance markers such as [inference].
 
 ${knowledgeQualityRubric(type)}
 
@@ -2257,6 +2686,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
 `.trim();
   }
 
+
   function stripInternalKnowledgeMetadata(text) {
     return String(text || "")
       .split(/\r?\n/)
@@ -2264,6 +2694,22 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       .join("\n")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
+  }
+
+  function resolveRawProvenanceForHumanReview(text) {
+    return stripInternalKnowledgeMetadata(text)
+      .replace(
+        /\[inference\]/gi,
+        "[[INFERENCE|This statement is derived from available evidence but is not directly established; validate or source it before publication.]]"
+      )
+      .replace(
+        /\[derived analysis\]/gi,
+        "[[INFERENCE|This statement comes from derived analysis; validate or source it before publication.]]"
+      )
+      .replace(
+        /\[from case data\]/gi,
+        "[[SOURCE_CHECK|This statement is case-derived; confirm the underlying authoritative source before publication.]]"
+      );
   }
 
   function extractKnowledgeSection(text, headingNames) {
@@ -2292,7 +2738,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
   }
 
   function deterministicKnowledgeQualityChecks(artifact, job, requestedReadiness = "") {
-    const text = stripInternalKnowledgeMetadata(artifact);
+    const text = resolveRawProvenanceForHumanReview(artifact);
     const issues = [];
     const type = job.knowledgeArtifactType || knowledgeArtifactType(job);
 
@@ -2337,14 +2783,21 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       issues.push("Source References cites the synthesis mechanism instead of an underlying source");
     }
 
-    const materialValidation = hasMaterialValidationItems(text);
+    const reviewMarkers = reviewMarkerStats(text);
+    const sectionValidation = hasMaterialValidationItems(text);
+    const materialValidation = sectionValidation || reviewMarkers.material.length > 0;
+    if (reviewMarkers.blockers.length) issues.push("unsupported review marker remains");
+    if (sectionValidation && !reviewMarkers.material.length) {
+      issues.push("material validation items are not linked to an inline review marker");
+    }
+
     let readiness = normalizeDecision(requestedReadiness);
     if (!["READY", "DRAFTABLE", "NOT READY"].includes(readiness)) readiness = "DRAFTABLE";
     if (materialValidation && readiness === "READY") readiness = "DRAFTABLE";
     if (issues.length && readiness === "READY") readiness = "DRAFTABLE";
 
     const blocking = issues.some(issue =>
-      /incomplete|internal reuse metadata|unresolved internal placeholder|raw internal provenance|unresolved editorial placeholder|code fence|missing required section|artifact targets|Source References/i.test(issue)
+      /incomplete|internal reuse metadata|unresolved internal placeholder|raw internal provenance|unresolved editorial placeholder|code fence|missing required section|artifact targets|Source References|unsupported review marker/i.test(issue)
     );
 
     if (blocking) readiness = "NOT READY";
@@ -2353,9 +2806,11 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       valid: !blocking,
       issues,
       readiness,
-      materialValidation
+      materialValidation,
+      reviewMarkers: reviewMarkers.markers
     };
   }
+
 
   function parseKnowledgeQualityResponse(rawAnswer, job) {
     const raw = String(rawAnswer || "").trim();
@@ -2363,12 +2818,14 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     if (delimiterIndex < 0) {
       return {
         valid: false,
-        reason: `quality reviewer did not return ${KNOWLEDGE_FINAL_DELIMITER}`
+        qualityApproved: false,
+        reason: `quality reviewer did not return ${KNOWLEDGE_FINAL_DELIMITER}`,
+        artifact: ""
       };
     }
 
     const header = raw.slice(0, delimiterIndex).trim();
-    const artifact = stripInternalKnowledgeMetadata(
+    const artifact = resolveRawProvenanceForHumanReview(
       raw.slice(delimiterIndex + KNOWLEDGE_FINAL_DELIMITER.length)
     );
 
@@ -2382,8 +2839,30 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     const summary = getHeader("QUALITY_SUMMARY");
     const validationItems = getHeader("MATERIAL_VALIDATION_ITEMS");
 
+    if (artifact.length < 160) {
+      return {
+        valid: false,
+        qualityApproved: false,
+        reason: "quality reviewer did not return a usable final artifact",
+        status: ["PASS", "PASS_WITH_VALIDATION", "FAIL"].includes(status) ? status : "FAIL",
+        readiness: "NOT READY",
+        summary,
+        validationItems,
+        artifact
+      };
+    }
+
     if (!["PASS", "PASS_WITH_VALIDATION", "FAIL"].includes(status)) {
-      return { valid:false, reason:"quality reviewer returned invalid QUALITY_STATUS" };
+      return {
+        valid: false,
+        qualityApproved: false,
+        reason: "quality reviewer returned invalid QUALITY_STATUS",
+        status: "FAIL",
+        readiness: "NOT READY",
+        summary,
+        validationItems,
+        artifact
+      };
     }
 
     const checks = deterministicKnowledgeQualityChecks(
@@ -2403,24 +2882,20 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       ? "PASS_WITH_VALIDATION"
       : status;
 
-    if (finalStatus === "FAIL" || readiness === "NOT READY" || !checks.valid) {
-      return {
-        valid: false,
-        reason: [
-          summary || "quality gate did not approve the artifact",
-          ...checks.issues
-        ].filter(Boolean).join(" · "),
-        status: finalStatus,
-        readiness: "NOT READY",
-        summary,
-        validationItems,
-        artifact,
-        issues: checks.issues
-      };
-    }
+    const qualityApproved =
+      finalStatus !== "FAIL" &&
+      readiness !== "NOT READY" &&
+      checks.valid;
 
     return {
       valid: true,
+      qualityApproved,
+      reason: qualityApproved
+        ? ""
+        : [
+            summary || "Knowledge draft requires human review before publication",
+            ...checks.issues
+          ].filter(Boolean).join(" · "),
       status: finalStatus,
       readiness,
       summary,
@@ -2900,8 +3375,8 @@ ${KNOWLEDGE_FINAL_DELIMITER}
 
     if (reuseType === "knowledge") {
       const parsed = parseKnowledgeQualityResponse(a, job);
-      if (!parsed.valid) {
-        return {valid:false, reason:`final quality-reviewed artifact is not reusable: ${parsed.reason}`};
+      if (!parsed.valid || !parsed.qualityApproved || normalizeDecision(parsed.readiness) === "NOT READY") {
+        return {valid:false, reason:`final quality-reviewed artifact is not reusable: ${parsed.reason || parsed.readiness || "quality review requires attention"}`};
       }
       return {valid:true, parsed};
     }
@@ -3311,6 +3786,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
   // Important governance rules are enforced in code as well as in the prompt.
   // Example: if every prior source date is Unknown, the audit cannot claim that
   // the answer was available BEFORE escalation.
+
   function normalizeAuditConsistency(answer) {
     let out = String(answer || "");
     if (!out) return out;
@@ -3333,6 +3809,26 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         "$1 UNDETERMINED"
       );
     }
+
+    const validationBoundary = extractField(out, "Validation Boundary");
+    const materialValidation =
+      Boolean(validationBoundary) &&
+      !/^(?:none|none identified|not applicable|n\/a|no additional validation items(?: identified)?(?: for draft generation)?)[.!]?$/i.test(validationBoundary) &&
+      /validation|required|verify|verification|SME|Engineering|documentation owner|review|exact\s+(?:UI|API|path|timing|version|schema)/i.test(validationBoundary);
+
+    if (materialValidation) {
+      out = out.replace(
+        /(\*\*Artifact Readiness:\*\*\s*)READY\b/i,
+        "$1DRAFTABLE"
+      );
+    }
+
+    out = out.replace(
+      /(\*\*Knowledge Action Summary:\*\*\s*[^\n\r]*)/gi,
+      line => line
+        .replace(/\bpublish(?:ing)?\s+a\s+KCS\s+article\b/gi, "prepare a KCS draft")
+        .replace(/\bpublish(?:ing)?\s+the\s+KCS\b/gi, "prepare the KCS draft")
+    );
 
     return out;
   }
@@ -3964,9 +4460,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     if (!dash) return;
 
     const jobs = [...state.jobs.values()];
-    const hasChange = j =>
-      [j.resolutionChangeNeeded, j.rcaChangeNeeded, j.fixTypeChangeNeeded, j.labelChangeNeeded]
-        .some(v => /^yes$/i.test(v || ""));
+    const hasChange = j => jobChangeNeededText(j) === "YES";
 
     const counts = {
       running: jobs.filter(j => j.status === "running").length,
@@ -4013,23 +4507,24 @@ ${KNOWLEDGE_FINAL_DELIMITER}
 
       const heartbeat = heartbeatInfo(job);
       const reviewed = job.reviewedFields || "—";
-      const eligibility = normalizeDecision(job.retrospectiveEligibility);
-      const applicableChangeValues = [
-        job.resolutionChangeNeeded,
-        job.rcaChangeNeeded,
-        job.fixTypeChangeNeeded,
-        job.labelChangeNeeded
-      ].filter(v => v && !/^(not applicable|n\/a)$/i.test(v));
-      const changeText = hasChange(job)
-        ? "YES"
-        : eligibility === "OUT OF SCOPE"
-          ? "N/A"
-          : applicableChangeValues.some(v => /^no$/i.test(v))
-            ? "NO"
-            : job.auditAnswer
-              ? "UNDETERMINED"
-              : "—";
+      const changeText = jobChangeNeededText(job);
       const reviewVerdict = primaryReviewVerdict(job) || job.retrospectiveEligibility || "—";
+      const verdictContext = primaryReviewVerdict(job) ? "verdict" : "eligibility";
+      const knowledgeUi = knowledgeUiState(job);
+      const knowledgeReadiness = job.validatedArtifactReadiness || job.artifactReadiness || "";
+      const knowledgePrimary = knowledgeUi === "complete" && knowledgeReadiness
+        ? readinessChipHtml(job)
+        : knowledgeUi === "failed"
+          ? semanticChipHtml("FAILED", "operational")
+          : knowledgeUi === "active"
+            ? semanticChipHtml("IN PROGRESS", "operational")
+            : knowledgeUi === "waiting"
+              ? semanticChipHtml("WAITING", "operational")
+              : knowledgeUi === "outdated"
+                ? semanticChipHtml("ATTENTION", "operational", "Knowledge needs regeneration after the Audit changed.")
+                : job.knowledgeStatus === "not_required"
+                  ? semanticChipHtml("N/A", "general", "No Knowledge artifact is required for this retrospective.")
+                  : semanticChipHtml("PENDING", "general");
 
       return `
         <tr class="xa-dashboard-row xa-row-${escapeHtml(job.status)}">
@@ -4043,12 +4538,12 @@ ${KNOWLEDGE_FINAL_DELIMITER}
           </td>
           <td><span class="xa-heartbeat" data-job-heartbeat="${escapeHtml(job.xsup)}" data-kind="${heartbeat.kind}">${escapeHtml(heartbeat.text)}</span></td>
           <td>${escapeHtml(reviewed)}</td>
-          <td>${escapeHtml(reviewVerdict)}</td>
-          <td>${escapeHtml(changeText)}</td>
+          <td>${semanticChipHtml(reviewVerdict, verdictContext)}</td>
+          <td>${changeDecisionChipHtml(changeText)}</td>
           <td>
             <div class="xa-knowledge-cell">
-              <strong>${knowledgeStatusIcon(job)} ${escapeHtml(knowledgeStatusText(job))}</strong>
-              ${job.knowledgeAction ? `<small>${escapeHtml(job.knowledgeAction)}${(job.validatedArtifactReadiness || job.artifactReadiness) ? ` · ${escapeHtml(job.validatedArtifactReadiness || job.artifactReadiness)}` : ""}</small>` : ""}
+              <strong>${knowledgePrimary}</strong>
+              ${job.knowledgeAction ? `<small>${escapeHtml(job.knowledgeAction)}${knowledgeReviewCount(job) ? ` · ${knowledgeReviewCount(job)} review${knowledgeReviewCount(job) === 1 ? "" : "s"}` : ""}</small>` : ""}
             </div>
           </td>
           <td><span data-job-elapsed="${escapeHtml(job.xsup)}">${job.startedAt ? escapeHtml(formatElapsed((job.endedAt || Date.now()) - job.startedAt)) : "—"}</span></td>
@@ -5145,67 +5640,78 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     pumpQueue();
   }
 
+
   function renderDecisionSummary(job) {
     const box = document.getElementById("xsup-auditor-decision-summary");
     if (!box || !job) return;
 
-    const tips = {
-      "Resolution": "Whether the ticket Resolution is supported by the technical conclusion and original evidence.",
-      "RCA": "Root Cause Analysis classification. Displayed only when RCA is an applicable retrospective field.",
-      "Fix Type": "Fix Type classification. Displayed only when Fix Type is an applicable retrospective field.",
-      "Flag / Label": "Applicable retrospective flag or label for products that use one.",
-      "Knowledge Action": "The best reusable knowledge action that follows from the Support-owned field decision.",
-      "Artifact Readiness": "Initial readiness from the retrospective. READY = useful draft can be generated now; DRAFTABLE = useful draft with named validation items; NOT READY = insufficient evidence.",
-      "Validated Readiness": "Final readiness after independent knowledge quality review. READY has no material validation items; DRAFTABLE still needs named validation; NOT READY is blocked from download.",
-      "Artifact": "The actual draft type generated from the Knowledge Action."
-    };
-
-    const row = (label, value, explanation = "", cls = "") => {
-      const tip = tips[label] || "";
-      return `
-        <div class="xa-decision-row ${cls}">
-          <div class="xa-decision-row-head">
-            <span>${escapeHtml(label)}${tip ? `<b class="xa-help-dot" data-tooltip="${escapeHtml(tip)}" tabindex="0" role="button" aria-label="Help: ${escapeHtml(label)}">?</b>` : ""}</span>
-            <strong>${escapeHtml(value || "—")}</strong>
-          </div>
-          ${explanation ? `<div class="xa-decision-row-explanation">${escapeHtml(explanation)}</div>` : ""}
-        </div>
-      `;
-    };
-
     const fieldRows = [];
-    const addField = (label, changeNeeded, verdict, explanation) => {
+    const addField = (label, changeNeeded, verdict, recommended) => {
       if (/^(not applicable|n\/a)$/i.test(changeNeeded || "")) return;
-      let value = verdict || "UNDETERMINED";
-      if (/^yes$/i.test(changeNeeded || "")) value += " · Change required";
-      else if (/^no$/i.test(changeNeeded || "")) value += " · No change";
-      fieldRows.push(row(label, value, explanation || "", "ticket"));
+      const change = /^yes$/i.test(changeNeeded || "")
+        ? "YES"
+        : /^no$/i.test(changeNeeded || "")
+          ? "NO"
+          : "UNDETERMINED";
+      const current = extractField(job.auditAnswer || "", `${label} Current Value`);
+      const action =
+        change === "YES"
+          ? `Change required${recommended ? ` — recommended: ${recommended}` : ""}`
+          : change === "NO"
+            ? `No field change${current ? ` — keep ${current}` : ""}`
+            : "Review the supporting evidence before changing the field.";
+
+      fieldRows.push(`
+        <tr>
+          <td><strong>${escapeHtml(label)}</strong></td>
+          <td>${semanticChipHtml(verdict || "UNDETERMINED", "verdict")}</td>
+          <td>${changeDecisionChipHtml(change)} <span class="xa-table-explain">${escapeHtml(action)}</span></td>
+        </tr>
+      `);
     };
 
-    addField("Resolution", job.resolutionChangeNeeded, job.verdict, job.resolutionExplanation);
-    addField("RCA", job.rcaChangeNeeded, job.rcaVerdict, job.rcaExplanation);
-    addField("Fix Type", job.fixTypeChangeNeeded, job.fixTypeVerdict, job.fixTypeExplanation);
-    addField("Flag / Label", job.labelChangeNeeded, job.labelVerdict, job.labelExplanation);
+    addField("Resolution", job.resolutionChangeNeeded, job.verdict, job.resolutionRecommendedValue);
+    addField("RCA", job.rcaChangeNeeded, job.rcaVerdict, job.rcaRecommendedValue);
+    addField("Fix Type", job.fixTypeChangeNeeded, job.fixTypeVerdict, job.fixTypeRecommendedValue);
+    addField("Flag / Label", job.labelChangeNeeded, job.labelVerdict, job.labelRecommendedValue);
 
-    const artifactLabel =
-      job.artifactTypeFromAudit ||
-      (job.knowledgeArtifactType ? knowledgeArtifactLabel(job.knowledgeArtifactType) : "None");
+    const knowledgeReadiness = job.validatedArtifactReadiness || job.artifactReadiness || "—";
+    const reviewCount = knowledgeReviewCount(job);
+    const knowledgeMeaning = job.knowledgeAction
+      ? `${job.knowledgeAction}${reviewCount ? ` · ${reviewCount} review item${reviewCount === 1 ? "" : "s"} remain` : ""}`
+      : "Knowledge decision pending";
 
     box.innerHTML = `
       <div class="xa-decision-group">
         <div class="xa-decision-group-title">Ticket Review</div>
-        <div class="xa-decision-list">
-          ${fieldRows.join("") || `<div class="xa-decision-empty">No applicable Support-owned field decision is available yet.</div>`}
+        <div class="xa-decision-table-wrap">
+          <table class="xa-decision-table">
+            <thead><tr><th>Review item</th><th>Result</th><th>Action / meaning</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><strong>Retrospective</strong></td>
+                <td>${semanticChipHtml(job.retrospectiveEligibility || "—", "eligibility")}</td>
+                <td class="xa-table-explain">${escapeHtml(semanticTooltip(job.retrospectiveEligibility || "", "eligibility") || "Review scope is not established yet.")}</td>
+              </tr>
+              ${fieldRows.join("") || `<tr><td colspan="3" class="xa-decision-empty">No applicable Support-owned field decision is available yet.</td></tr>`}
+            </tbody>
+          </table>
         </div>
       </div>
 
       <div class="xa-decision-group">
         <div class="xa-decision-group-title">Knowledge</div>
-        <div class="xa-decision-list">
-          ${row("Knowledge Action", job.knowledgeAction, job.knowledgeDecisionExplanation, "knowledge")}
-          ${row("Artifact Readiness", job.artifactReadiness, "", "knowledge")}
-          ${job.validatedArtifactReadiness ? row("Validated Readiness", job.validatedArtifactReadiness, job.knowledgeQualitySummary || "", "knowledge") : ""}
-          ${row("Artifact", artifactLabel, "", "knowledge")}
+        <div class="xa-decision-table-wrap">
+          <table class="xa-decision-table">
+            <thead><tr><th>Review item</th><th>Result</th><th>Action / meaning</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><strong>Knowledge</strong></td>
+                <td>${semanticChipHtml(knowledgeReadiness, "readiness")}</td>
+                <td class="xa-table-explain">${escapeHtml(knowledgeMeaning)}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     `;
@@ -5221,23 +5727,28 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       (type ? knowledgeArtifactLabel(type) : "No knowledge artifact");
     const canDownload = Boolean(job.knowledgeAnswer);
     const canRetry = Boolean(type && job.auditAnswer && ["failed", "stopped", "not_generated", "outdated"].includes(job.knowledgeStatus));
+    const reviewCount = knowledgeReviewCount(job);
+    const completedWithReadiness = job.knowledgeStatus === "completed" && (job.validatedArtifactReadiness || job.artifactReadiness);
+
+    const primaryStatus = completedWithReadiness
+      ? readinessChipHtml(job)
+      : `<span class="xa-knowledge-status xa-knowledge-${escapeHtml(job.knowledgeStatus)}">${knowledgeStatusIcon(job)} ${escapeHtml(knowledgeStatusText(job))}</span>`;
 
     box.innerHTML = `
       <div class="xa-knowledge-card">
         <div class="xa-knowledge-title">
           <div>
             <strong>${escapeHtml(job.knowledgeAction || "Knowledge decision pending")}</strong>
-            <span>Initial Readiness: ${escapeHtml(job.artifactReadiness || "—")} · Validated: ${escapeHtml(job.validatedArtifactReadiness || "Pending")} · ${escapeHtml(label)}</span>
+            <span>${escapeHtml(label)}${reviewCount ? ` · ${reviewCount} review item${reviewCount === 1 ? "" : "s"}` : ""}</span>
           </div>
-          <span class="xa-knowledge-status xa-knowledge-${escapeHtml(job.knowledgeStatus)}">${knowledgeStatusIcon(job)} ${escapeHtml(knowledgeStatusText(job))}</span>
+          ${primaryStatus}
         </div>
         ${job.knowledgeDecisionExplanation ? `<div class="xa-knowledge-decision">${escapeHtml(job.knowledgeDecisionExplanation)}</div>` : ""}
-        ${job.knowledgeQualitySummary ? `<div class="xa-knowledge-decision"><strong>Quality review:</strong> ${escapeHtml(job.knowledgeQualitySummary)}${job.knowledgeQualityValidationItems && !/^(none|none identified)$/i.test(job.knowledgeQualityValidationItems) ? `<br><strong>Validation:</strong> ${escapeHtml(job.knowledgeQualityValidationItems)}` : ""}</div>` : ""}
         ${job.knowledgeError ? `<div class="xa-knowledge-error">${escapeHtml(job.knowledgeError)}</div>` : ""}
-        ${job.knowledgeAnswer ? `<div class="xa-knowledge-preview">${safeMarkdownToHtml(stripInternalKnowledgeMetadata(job.knowledgeAnswer))}</div>` : ""}
+        ${job.knowledgeAnswer ? `<div class="xa-knowledge-preview">${knowledgeMarkdownToHtml(job.knowledgeAnswer)}</div>${knowledgeReviewFooterHtml(job)}` : ""}
         <div class="xa-actions">
           ${canDownload ? `<button id="xsup-auditor-download-knowledge">Download ${escapeHtml(label)}</button>` : ""}
-          ${canDownload ? `<button id="xsup-auditor-copy-knowledge">Copy ${escapeHtml(label)}</button>` : ""}
+          ${canDownload ? `<button id="xsup-auditor-copy-knowledge">Copy Review Draft</button>` : ""}
           ${canRetry ? `<button id="xsup-auditor-retry-knowledge">Generate / Retry ${escapeHtml(label)}</button>` : ""}
         </div>
       </div>
@@ -5248,8 +5759,8 @@ ${KNOWLEDGE_FINAL_DELIMITER}
 
     const copy = document.getElementById("xsup-auditor-copy-knowledge");
     if (copy) copy.onclick = async () => {
-      await copyWithFeedback(copy, job.knowledgeAnswer || "");
-      setStatus(`${job.xsup} ${label} copied.`, "ok");
+      await copyWithFeedback(copy, knowledgeTextForCopy(job.knowledgeAnswer || ""));
+      setStatus(`${job.xsup} ${label} review draft copied.`, "ok");
     };
 
     const retry = document.getElementById("xsup-auditor-retry-knowledge");
@@ -6248,19 +6759,33 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         }
 
         if (!parsed.valid) {
+          const fallbackArtifact = resolveRawProvenanceForHumanReview(
+            parsed.artifact || job.knowledgeDraftAnswer || ""
+          );
+          if (fallbackArtifact.length < 160) {
+            throw new Error(`Knowledge finalization did not return a usable draft: ${parsed.reason || "unknown quality-response error"}.`);
+          }
+
+          job.knowledgeRawAnswer = finalQualityRaw;
+          job.knowledgeAnswer = fallbackArtifact;
+          job.validatedArtifactReadiness = "NOT READY";
           job.knowledgeQualityStatus = parsed.status || "FAIL";
-          job.validatedArtifactReadiness = parsed.readiness || "NOT READY";
+          job.knowledgeQualitySummary =
+            parsed.summary ||
+            parsed.reason ||
+            "Quality finalization could not be fully validated; the draft is preserved for human review.";
+          job.knowledgeQualityValidationItems =
+            parsed.validationItems ||
+            "Quality finalization requires human review before publication.";
+        } else {
+          job.knowledgeRawAnswer = finalQualityRaw;
+          job.knowledgeAnswer = parsed.artifact;
+          job.validatedArtifactReadiness = parsed.readiness;
+          job.knowledgeQualityStatus = parsed.status;
           job.knowledgeQualitySummary = parsed.summary || parsed.reason || "";
-          job.knowledgeQualityValidationItems = parsed.validationItems || "";
-          throw new Error(`Knowledge quality gate blocked the artifact after final validation: ${parsed.reason}.`);
+          job.knowledgeQualityValidationItems = parsed.validationItems;
         }
 
-        job.knowledgeRawAnswer = finalQualityRaw;
-        job.knowledgeAnswer = parsed.artifact;
-        job.validatedArtifactReadiness = parsed.readiness;
-        job.knowledgeQualityStatus = parsed.status;
-        job.knowledgeQualitySummary = parsed.summary;
-        job.knowledgeQualityValidationItems = parsed.validationItems;
         job.knowledgeReuseStatus = job.forceKnowledgeRefresh ? "regenerated" : "generated";
         job.knowledgeReuseReason = job.forceKnowledgeRefresh
           ? "Manual knowledge regeneration requested; enrichment and independent quality review were regenerated."
@@ -6270,9 +6795,12 @@ ${KNOWLEDGE_FINAL_DELIMITER}
 
       job.forceKnowledgeRefresh = false;
       job.knowledgeStatus = "completed";
-      job.knowledgeProgress = job.validatedArtifactReadiness === "DRAFTABLE"
-        ? "quality-reviewed · validation required"
-        : "quality-reviewed · ready";
+      job.knowledgeProgress =
+        job.validatedArtifactReadiness === "NOT READY"
+          ? "quality-reviewed · NOT READY · human review required"
+          : job.validatedArtifactReadiness === "DRAFTABLE"
+            ? "quality-reviewed · validation required"
+            : "quality-reviewed · ready";
       job.knowledgeLastHeartbeatAt = Date.now();
       job.knowledgeEndedAt = Date.now();
 
@@ -6282,18 +6810,36 @@ ${KNOWLEDGE_FINAL_DELIMITER}
 
       await downloadKnowledgeArtifact(job, { auto: true });
 
+      const finalKnowledgeReadiness = normalizeDecision(job.validatedArtifactReadiness || job.artifactReadiness);
       showToast(
-        `✓ ${job.xsup} ${knowledgeArtifactLabel(job.knowledgeArtifactType)} ${job.knowledgeReuseStatus === "reused" ? "reused" : "quality-reviewed"}`,
-        "ok"
+        `${finalKnowledgeReadiness === "READY" ? "✓" : "⚠"} ${job.xsup} ${knowledgeArtifactLabel(job.knowledgeArtifactType)} ${job.knowledgeReuseStatus === "reused" ? "reused" : "generated"} · ${finalKnowledgeReadiness || "REVIEW"}`,
+        finalKnowledgeReadiness === "READY" ? "ok" : ""
       );
     } catch (err) {
       if (err?.name === "AbortError" || state.stopped) {
         job.knowledgeStatus = "stopped";
         job.knowledgeProgress = "stopped";
         job.knowledgeError = "Stopped by user.";
+      } else if (String(job.knowledgeDraftAnswer || "").trim().length >= 160) {
+        job.knowledgeStatus = "completed";
+        job.knowledgeProgress = "draft preserved · NOT READY · quality finalization needs review";
+        job.knowledgeReuseStatus = "generated";
+        job.knowledgeAnswer = resolveRawProvenanceForHumanReview(job.knowledgeDraftAnswer);
+        job.knowledgeRawAnswer = "";
+        job.knowledgeError = `Quality finalization could not complete: ${err?.message || String(err)}. The enriched draft is preserved for human review.`;
+        job.knowledgeQualityStatus = "FAIL";
+        job.validatedArtifactReadiness = "NOT READY";
+        job.knowledgeQualitySummary = job.knowledgeError;
+        if (!job.knowledgeQualityValidationItems) {
+          job.knowledgeQualityValidationItems = "Quality finalization did not complete; human review is required before publication.";
+        }
+        job.knowledgeCompletedAt = Date.now();
+        job.references = extractReferences(job.auditAnswer, job.knowledgeAnswer);
+        await downloadKnowledgeArtifact(job, { auto: true });
+        showToast(`⚠ ${job.xsup} knowledge draft preserved · NOT READY`, "");
       } else {
         job.knowledgeStatus = "failed";
-        job.knowledgeProgress = "quality gate / generation failed";
+        job.knowledgeProgress = "generation failed · no usable draft";
         job.knowledgeReuseStatus = "failed";
         job.knowledgeAnswer = "";
         job.knowledgeRawAnswer = "";
@@ -6301,7 +6847,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         if (!job.knowledgeQualityStatus) job.knowledgeQualityStatus = "FAIL";
         if (!job.validatedArtifactReadiness) job.validatedArtifactReadiness = "NOT READY";
         if (!job.knowledgeQualitySummary) job.knowledgeQualitySummary = job.knowledgeError;
-        showToast(`⚠ ${job.xsup} knowledge draft failed quality/generation`, "error");
+        showToast(`⚠ ${job.xsup} knowledge generation failed before a usable draft was produced`, "error");
       }
       job.knowledgeEndedAt = Date.now();
     } finally {
@@ -6589,6 +7135,26 @@ pre{background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px;w
 .refs{padding-left:20px}.refs li{margin:6px 0}.ticket{page-break-before:always}.ticket:first-child{page-break-before:auto}
 .toc li{margin:5px 0}
 .small{font-size:12px;color:#6b7280}
+.xa-semantic-chip,.xa-review-chip{display:inline-flex;align-items:center;gap:3px;border-radius:999px;padding:2px 7px;font-size:11px;font-weight:750;line-height:1.35;white-space:nowrap;vertical-align:baseline;border:1px solid transparent;cursor:help}.xa-semantic-green,.xa-review-green{background:#dcfce7;color:#065f46;border-color:#86efac}.xa-semantic-amber,.xa-review-amber{background:#fef3c7;color:#92400e;border-color:#fcd34d}.xa-semantic-purple,.xa-review-purple{background:#ede9fe;color:#6d28d9;border-color:#c4b5fd}.xa-semantic-red,.xa-review-red{background:#fee2e2;color:#991b1b;border-color:#fca5a5}.xa-semantic-blue,.xa-review-blue{background:#dbeafe;color:#1d4ed8;border-color:#93c5fd}.xa-semantic-gray,.xa-review-gray{background:#f8fafc;color:#64748b;border-color:#e2e8f0}.xa-title-line{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.xa-title-line h1{margin-right:2px}.xa-review-count{font-size:11px;color:#92400e;font-weight:700}.xa-review-footer{margin-top:26px;padding-top:4px}.xa-review-footer details{margin:8px 0;border:1px solid #e5e7eb;border-radius:9px;background:#fafafa}.xa-review-footer summary{cursor:pointer;padding:8px 10px;font-size:12px;font-weight:750;color:#334155}.xa-review-details-body,.xa-quality-details-body,.xa-review-guide-body{padding:0 10px 10px;font-size:12px}.xa-review-item-list{padding-left:22px}.xa-review-item-list li{margin:7px 0}.xa-review-item-list .xa-review-chip{margin-right:6px}.xa-review-validation-summary{margin-top:9px;padding:8px 10px;border-left:3px solid #f59e0b;background:#fffbeb;border-radius:5px}.xa-review-validation-summary p{margin:4px 0 0}.xa-review-guide-table-wrap{overflow:auto}.xa-review-guide-table{width:100%;border-collapse:collapse;font-size:12px}.xa-review-guide-table th,.xa-review-guide-table td{text-align:left;vertical-align:top;padding:7px;border-bottom:1px solid #e5e7eb}.xa-review-guide-table th{color:#475569;background:#f8fafc}.xa-review-chip{margin-left:4px}
+
+.xa-key-summary{margin:10px 0 12px;border:1px solid #dbe3ef;border-radius:10px;overflow:hidden;background:#fff}
+.xa-key-summary-table,.xa-decision-table,.xa-detail-table{width:100%;border-collapse:collapse}
+.xa-key-summary-table th,.xa-key-summary-table td,.xa-decision-table th,.xa-decision-table td,.xa-detail-table th,.xa-detail-table td{text-align:left;vertical-align:top;border-bottom:1px solid #e5e7eb;padding:8px 10px}
+.xa-key-summary-table th,.xa-decision-table th{font-size:11px;color:#475569;background:#f8fafc;font-weight:800}
+.xa-key-summary-table td{font-size:12px}
+.xa-key-summary-table tr:last-child td,.xa-decision-table tr:last-child td,.xa-detail-table tr:last-child td{border-bottom:0}
+.xa-table-explain{color:#475569;margin-left:5px}
+.xa-meta-details,.xa-reference-details{margin:8px 0;border:1px solid #e5e7eb;border-radius:9px;background:#fafafa}
+.xa-meta-details>summary,.xa-reference-details>summary{cursor:pointer;padding:8px 10px;font-size:12px;font-weight:750;color:#334155}
+.xa-meta-details-body{padding:0 10px 10px}
+.xa-detail-table th{width:145px;color:#475569;font-size:11px}
+.xa-detail-table td{font-size:11px}
+.xa-detail-links{margin:8px 0}
+.xa-decision-table-wrap{overflow:auto;border:1px solid #e5e7eb;border-radius:8px}
+.xa-decision-table{font-size:10px;background:#fff}
+.xa-decision-table th,.xa-decision-table td{padding:7px 8px}
+.xa-review-guide summary{font-weight:800}
+
 </style>
 </head>
 <body>
@@ -6601,8 +7167,66 @@ ${bodyHtml}
   // STORAGE / DOWNLOAD / COPY
   // ===========================================================================
 
+
+  function auditDecisionSummaryTableHtml(job) {
+    const rows = [];
+    rows.push(`
+      <tr>
+        <td><strong>Retrospective</strong></td>
+        <td>${semanticChipHtml(job.retrospectiveEligibility || "—", "eligibility")}</td>
+        <td>${escapeHtml(semanticTooltip(job.retrospectiveEligibility || "", "eligibility") || "Scope not established yet.")}</td>
+      </tr>
+    `);
+
+    const addField = (label, changeNeeded, verdict, recommended) => {
+      if (/^(not applicable|n\/a)$/i.test(changeNeeded || "")) return;
+      const change = /^yes$/i.test(changeNeeded || "") ? "YES" :
+        /^no$/i.test(changeNeeded || "") ? "NO" : "UNDETERMINED";
+      const current = extractField(job.auditAnswer || "", `${label} Current Value`);
+      const action = change === "YES"
+        ? `Change required${recommended ? ` — recommended: ${recommended}` : ""}`
+        : change === "NO"
+          ? `No change${current ? ` — keep ${current}` : ""}`
+          : "Review supporting evidence before changing the field.";
+
+      rows.push(`
+        <tr>
+          <td><strong>${escapeHtml(label)}</strong></td>
+          <td>${semanticChipHtml(verdict || "UNDETERMINED", "verdict")}</td>
+          <td>${changeDecisionChipHtml(change)} <span class="xa-table-explain">${escapeHtml(action)}</span></td>
+        </tr>
+      `);
+    };
+
+    addField("Resolution", job.resolutionChangeNeeded, job.verdict, job.resolutionRecommendedValue);
+    addField("RCA", job.rcaChangeNeeded, job.rcaVerdict, job.rcaRecommendedValue);
+    addField("Fix Type", job.fixTypeChangeNeeded, job.fixTypeVerdict, job.fixTypeRecommendedValue);
+    addField("Flag / Label", job.labelChangeNeeded, job.labelVerdict, job.labelRecommendedValue);
+
+    const readiness = job.validatedArtifactReadiness || job.artifactReadiness || "—";
+    const reviewCount = knowledgeReviewCount(job);
+    rows.push(`
+      <tr>
+        <td><strong>Knowledge</strong></td>
+        <td>${semanticChipHtml(readiness, "readiness")}</td>
+        <td>${escapeHtml(job.knowledgeAction || "Knowledge decision pending")}${reviewCount ? ` · <strong>${reviewCount} review item${reviewCount === 1 ? "" : "s"}</strong>` : ""}</td>
+      </tr>
+    `);
+
+    return `
+      <div class="xa-key-summary">
+        <table class="xa-key-summary-table">
+          <thead><tr><th>Review item</th><th>Result</th><th>Action / meaning</th></tr></thead>
+          <tbody>${rows.join("")}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
   function selectedJobReportHtml(job) {
-    const refs = (job.references || []).map((r, i) => {
+    const reportRefs = (job.references?.length ? job.references : extractReferences(job.auditAnswer || ""))
+      .filter(r => r?.url || r?.title);
+    const refs = reportRefs.map((r, i) => {
       const url = safeUrl(r.url);
       const label = escapeHtml(r.title || r.url || `Reference ${i+1}`);
       return `<li>${url ? `<a href="${escapeHtml(url)}">${label}</a>` : label}${r.type ? ` <span class="small">(${escapeHtml(r.type)})</span>` : ""}</li>`;
@@ -6616,36 +7240,46 @@ ${bodyHtml}
     if (sfdc) links.push(`<a href="${escapeHtml(sfdc)}">SFDC ${escapeHtml(job.caseNumber || "")}</a>`);
     if (taco) links.push(`<a href="${escapeHtml(taco)}">TACopilot ${escapeHtml(job.caseNumber || "")}</a>`);
 
+    const analysisDetails = `
+      <details class="xa-meta-details">
+        <summary>Analysis details</summary>
+        <div class="xa-meta-details-body">
+          <table class="xa-detail-table">
+            <tbody>
+              <tr><th>SFDC</th><td>${escapeHtml(job.caseNumber || "—")}</td></tr>
+              <tr><th>Product</th><td>${escapeHtml(productLabel(job))}</td></tr>
+              <tr><th>Reviewed fields</th><td>${escapeHtml(job.reviewedFields || "—")}</td></tr>
+              <tr><th>Knowledge action</th><td>${escapeHtml(job.knowledgeAction || "—")}</td></tr>
+              <tr><th>TACO</th><td>${escapeHtml(job.tacoDecision || "—")}</td></tr>
+              <tr><th>Audit source</th><td>${escapeHtml(reuseStatusText(job.auditReuseStatus))}${job.auditFollowupId ? ` · Case Chat #${escapeHtml(job.auditFollowupId)}` : ""}</td></tr>
+              <tr><th>Audit date</th><td>${escapeHtml(formatTimestamp(job.auditCompletedAt))}</td></tr>
+            </tbody>
+          </table>
+          ${links.length ? `<div class="small xa-detail-links">${links.join(" · ")}</div>` : ""}
+          ${job.tacoDecisionReason ? `<div class="small"><b>TACO freshness:</b> ${escapeHtml(job.tacoDecisionReason)} · TACO: ${escapeHtml(formatTimestamp(job.tacoAnalysisAt))} · Latest case evidence: ${escapeHtml(formatTimestamp(job.latestCaseEvidenceAt))}</div>` : ""}
+        </div>
+      </details>
+    `;
+
     return `
       <article class="ticket" id="${escapeHtml(job.xsup)}">
         <h1>${escapeHtml(job.xsup)} Retrospective Audit</h1>
-        <div class="meta">
-          <span class="pill">SFDC: ${escapeHtml(job.caseNumber || "—")}</span>
-          <span class="pill">Product: ${escapeHtml(productLabel(job))}</span>
-          <span class="pill">Eligibility: ${escapeHtml(job.retrospectiveEligibility || "—")}</span>
-          <span class="pill">Reviewed Fields: ${escapeHtml(job.reviewedFields || "—")}</span>
-          <span class="pill">Review Verdict: ${escapeHtml(primaryReviewVerdict(job) || "—")}</span>
-          <span class="pill">Knowledge Action: ${escapeHtml(job.knowledgeAction || "—")}</span>
-          <span class="pill">Draft Readiness: ${escapeHtml(job.artifactReadiness || "—")}</span>
-          ${job.validatedArtifactReadiness ? `<span class="pill">Validated Artifact Readiness: ${escapeHtml(job.validatedArtifactReadiness)}</span>` : ""}
-          ${job.knowledgeQualityStatus ? `<span class="pill">Knowledge Quality: ${escapeHtml(job.knowledgeQualityStatus)}</span>` : ""}
-          <span class="pill">TACO: ${escapeHtml(job.tacoDecision || "—")}</span>
-          <span class="pill">Audit Source: ${escapeHtml(reuseStatusText(job.auditReuseStatus))}${job.auditFollowupId ? ` · Case Chat #${escapeHtml(job.auditFollowupId)}` : ""}</span>
-          <span class="pill">Audit Date: ${escapeHtml(formatTimestamp(job.auditCompletedAt))}</span>
-        </div>
-        ${links.length ? `<div class="small">${links.join(" · ")}</div>` : ""}
-        ${job.tacoDecisionReason ? `<div class="small" style="margin-top:6px"><b>TACO freshness:</b> ${escapeHtml(job.tacoDecisionReason)} · TACO: ${escapeHtml(formatTimestamp(job.tacoAnalysisAt))} · Latest case evidence: ${escapeHtml(formatTimestamp(job.latestCaseEvidenceAt))}</div>` : ""}
+        ${auditDecisionSummaryTableHtml(job)}
+        ${analysisDetails}
         <div class="section">
-          ${safeMarkdownToHtml(job.auditAnswer || "No completed audit report available.")}
+          ${auditMarkdownToHtml(job.auditAnswer || "No completed audit report available.")}
         </div>
         <div class="section">
           <h2>Review Paste Comment</h2>
           <div class="comment">${escapeHtml(job.xsupComment || "Not available")}</div>
         </div>
-        <div class="section">
-          <h2>References</h2>
-          ${refs ? `<ol class="refs">${refs}</ol>` : "<p>No references captured.</p>"}
-        </div>
+        ${refs ? `
+          <details class="xa-meta-details xa-reference-details">
+            <summary>References (${reportRefs.length})</summary>
+            <div class="xa-meta-details-body"><ol class="refs">${refs}</ol></div>
+          </details>
+        ` : ""}
+        ${auditStatusGuideHtml()}
       </article>
     `;
   }
@@ -6677,25 +7311,54 @@ ${bodyHtml}
     }
   }
 
+
+  function knowledgeArticleHtmlWithStatus(job) {
+    const reviewCount = knowledgeReviewCount(job);
+    let articleHtml = knowledgeMarkdownToHtml(job.knowledgeAnswer || "No knowledge draft available.");
+    const statusBits = `${readinessChipHtml(job)}${reviewCount ? `<span class="xa-review-count">${reviewCount} review item${reviewCount === 1 ? "" : "s"}</span>` : ""}`;
+
+    if (/<h1>[\s\S]*?<\/h1>/i.test(articleHtml)) {
+      articleHtml = articleHtml.replace(
+        /<h1>([\s\S]*?)<\/h1>/i,
+        `<div class="xa-title-line"><h1>$1</h1>${statusBits}</div>`
+      );
+    } else {
+      articleHtml = `<div class="xa-title-line"><h1>${escapeHtml(knowledgeArtifactLabel(job.knowledgeArtifactType || knowledgeArtifactType(job)))}</h1>${statusBits}</div>${articleHtml}`;
+    }
+    return articleHtml;
+  }
+
+  function knowledgeGenerationDetailsHtml(job) {
+    return `
+      <details class="xa-meta-details">
+        <summary>Generation details</summary>
+        <div class="xa-meta-details-body">
+          <table class="xa-detail-table">
+            <tbody>
+              <tr><th>XSUP</th><td>${escapeHtml(job.xsup || "—")}</td></tr>
+              <tr><th>SFDC</th><td>${escapeHtml(job.caseNumber || "—")}</td></tr>
+              <tr><th>Product</th><td>${escapeHtml(productLabel(job))}</td></tr>
+              <tr><th>Knowledge action</th><td>${escapeHtml(job.knowledgeAction || "—")}</td></tr>
+              <tr><th>Artifact source</th><td>${escapeHtml(reuseStatusText(job.knowledgeReuseStatus))}${job.knowledgeFollowupId ? ` · Case Chat #${escapeHtml(job.knowledgeFollowupId)}` : ""}</td></tr>
+              <tr><th>Artifact date</th><td>${escapeHtml(formatTimestamp(job.knowledgeCompletedAt))}</td></tr>
+              <tr><th>Quality result</th><td>${escapeHtml(job.knowledgeQualityStatus || "—")}</td></tr>
+            </tbody>
+          </table>
+          <p class="small">Automatically generated review draft. Human TAC/SME/Engineering/documentation review is required before publication.</p>
+        </div>
+      </details>
+    `;
+  }
+
   function knowledgeArtifactHtml(job) {
     const label = knowledgeArtifactLabel(job.knowledgeArtifactType || knowledgeArtifactType(job));
     return htmlDoc(
       `${job.xsup} ${label}`,
       `
       <article>
-        <h1>${escapeHtml(job.xsup)} — ${escapeHtml(label)}</h1>
-        <div class="meta">
-          <span class="pill">SFDC: ${escapeHtml(job.caseNumber || "—")}</span>
-          <span class="pill">Product: ${escapeHtml(productLabel(job))}</span>
-          <span class="pill">Knowledge Action: ${escapeHtml(job.knowledgeAction || "—")}</span>
-          <span class="pill">Artifact Readiness: ${escapeHtml(job.validatedArtifactReadiness || job.artifactReadiness || "—")}</span>
-          ${job.knowledgeQualityStatus ? `<span class="pill">Quality Review: ${escapeHtml(job.knowledgeQualityStatus)}</span>` : ""}
-          <span class="pill">Artifact Source: ${escapeHtml(reuseStatusText(job.knowledgeReuseStatus))}${job.knowledgeFollowupId ? ` · Case Chat #${escapeHtml(job.knowledgeFollowupId)}` : ""}</span>
-          <span class="pill">Artifact Date: ${escapeHtml(formatTimestamp(job.knowledgeCompletedAt))}</span>
-        </div>
-        <p class="small">This is an automatically generated, quality-reviewed draft. Human TAC/SME/documentation review is still required before publication.</p>
-        ${job.knowledgeQualitySummary ? `<p class="small"><b>Quality review:</b> ${escapeHtml(job.knowledgeQualitySummary)}${job.knowledgeQualityValidationItems && !/^(none|none identified)$/i.test(job.knowledgeQualityValidationItems) ? ` · <b>Validation:</b> ${escapeHtml(job.knowledgeQualityValidationItems)}` : ""}</p>` : ""}
-        <div class="section">${safeMarkdownToHtml(stripInternalKnowledgeMetadata(job.knowledgeAnswer || "No knowledge draft available."))}</div>
+        <div class="section">${knowledgeArticleHtmlWithStatus(job)}</div>
+        ${knowledgeReviewFooterHtml(job)}
+        ${knowledgeGenerationDetailsHtml(job)}
       </article>
       `
     );
@@ -6713,9 +7376,9 @@ ${bodyHtml}
     return `${artifactBase(job, true)}_${suffix}.html`;
   }
 
+
   async function downloadKnowledgeArtifact(job, { auto = false } = {}) {
     if (!job?.knowledgeAnswer) return false;
-    if (normalizeDecision(job.validatedArtifactReadiness) === "NOT READY") return false;
     if (auto && job.knowledgeAutoSaved) return false;
 
     await downloadBlob(
@@ -6740,7 +7403,7 @@ ${bodyHtml}
   function combinedKnowledgeText() {
     return [...state.jobs.values()]
       .filter(j => j.knowledgeAnswer)
-      .map(j => `# ${j.xsup}${j.caseNumber ? ` · SFDC ${j.caseNumber}` : ""} — ${knowledgeArtifactLabel(j.knowledgeArtifactType)}\n\n${j.knowledgeAnswer}`)
+      .map(j => `# ${j.xsup}${j.caseNumber ? ` · SFDC ${j.caseNumber}` : ""} — ${knowledgeArtifactLabel(j.knowledgeArtifactType)}\n\n${knowledgeTextForCopy(j.knowledgeAnswer)}`)
       .join("\n\n---\n\n");
   }
 
@@ -6784,9 +7447,11 @@ ${bodyHtml}
           <h1>${escapeHtml(j.xsup)} — ${escapeHtml(knowledgeArtifactLabel(j.knowledgeArtifactType))}</h1>
           <div class="meta">
             <span class="pill">${escapeHtml(j.knowledgeAction || "")}</span>
-            <span class="pill">${escapeHtml(j.validatedArtifactReadiness || j.artifactReadiness || "")}</span>
+            ${readinessChipHtml(j)}
+            ${knowledgeReviewCount(j) ? `<span class="pill">${knowledgeReviewCount(j)} review item${knowledgeReviewCount(j) === 1 ? "" : "s"}</span>` : ""}
           </div>
-          <div class="section">${safeMarkdownToHtml(j.knowledgeAnswer)}</div>
+          <div class="section">${knowledgeMarkdownToHtml(j.knowledgeAnswer)}</div>
+          ${knowledgeReviewFooterHtml(j)}
         </article>
       `).join("")}
     `;
@@ -7278,6 +7943,9 @@ ${bodyHtml}
           <p>Before creating another Audit or final Knowledge Case Chat, the auditor checks existing follow-up history. Reuse requires matching current inputs/method. The selected product and product policy are part of the audit fingerprint, so a product change cannot accidentally reuse another product's retrospective.</p>
           <p><b>Re-analyze All</b> deliberately refreshes TACO and regenerates Audit + Knowledge. Do not use it merely to download another copy of a report.</p>
 
+          <h3>Status &amp; review colors</h3>
+          <p>Green = supported/correct/ready; amber = human validation/action; purple = inference/uncertainty; red = blocker/change/failure; blue = informational; gray = neutral/not applicable. Knowledge drafts place compact colored review chips directly beside the exact claim and include a collapsed Review Marker Guide at the bottom.</p>
+
           <h3>Evidence and responsibility</h3>
           <p>TACO is derived technical analysis. Original Jira/SFDC records are required to prove what Engineering, TAC or the customer actually recorded/communicated. If evidence is insufficient, the safe result is <b>UNDETERMINED</b>.</p>
           <p>This is an internal decision-support tool. Review generated conclusions/knowledge before ticket changes, sharing or publication.</p>
@@ -7304,6 +7972,7 @@ ${bodyHtml}
       #xsup-auditor-panel{position:fixed;right:20px;top:60px;z-index:2147483647;width:min(980px,calc(100vw - 40px));max-height:calc(100vh - 80px);overflow:auto;background:#fff;color:#111827;border:1px solid #c7d2fe;border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.22);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:16px}
       #xsup-auditor-panel *{box-sizing:border-box}
       .xa-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.xa-title{font-size:18px;font-weight:750}.xa-sub{margin-top:3px;font-size:11px;color:#6b7280}.xa-head-actions{display:flex;align-items:center;gap:2px}.xa-icon{border:0;background:transparent;color:#6b7280;cursor:pointer}.xa-head-actions .xa-icon{width:34px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:7px;font-size:18px;transition:background .12s ease,transform .12s ease}.xa-head-actions .xa-icon:hover{background:#f3f4f6}.xa-head-actions .xa-icon:active{transform:scale(.94)}
+      .xa-semantic-chip,.xa-review-chip{display:inline-flex;align-items:center;gap:3px;border-radius:999px;padding:2px 6px;font-size:9.5px;font-weight:800;line-height:1.35;white-space:nowrap;vertical-align:middle;border:1px solid transparent;cursor:help}.xa-semantic-green,.xa-review-green{background:#dcfce7;color:#065f46;border-color:#86efac}.xa-semantic-amber,.xa-review-amber{background:#fef3c7;color:#92400e;border-color:#fcd34d}.xa-semantic-purple,.xa-review-purple{background:#ede9fe;color:#6d28d9;border-color:#c4b5fd}.xa-semantic-red,.xa-review-red{background:#fee2e2;color:#991b1b;border-color:#fca5a5}.xa-semantic-blue,.xa-review-blue{background:#dbeafe;color:#1d4ed8;border-color:#93c5fd}.xa-semantic-gray,.xa-review-gray{background:#f8fafc;color:#64748b;border-color:#e2e8f0}.xa-review-chip{margin-left:4px}.xa-review-footer{margin-top:10px}.xa-review-footer details{margin:6px 0;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa}.xa-review-footer summary{cursor:pointer;padding:6px 8px;font-size:9px;font-weight:800;color:#475569}.xa-review-details-body,.xa-quality-details-body,.xa-review-guide-body{padding:0 8px 8px;font-size:9px;line-height:1.45}.xa-review-item-list{padding-left:18px;margin:4px 0}.xa-review-item-list li{margin:6px 0}.xa-review-validation-summary{margin-top:6px;padding:6px 8px;border-left:3px solid #f59e0b;background:#fffbeb;border-radius:5px}.xa-review-validation-summary p{margin:3px 0 0}.xa-review-guide-table-wrap{overflow:auto}.xa-review-guide-table{width:100%;border-collapse:collapse;font-size:10px}.xa-review-guide-table th,.xa-review-guide-table td{text-align:left;vertical-align:top;padding:5px;border-bottom:1px solid #e5e7eb}.xa-review-guide-table th{color:#475569;background:#f8fafc}.xa-review-count{font-size:8.5px;color:#92400e;font-weight:800}
       .xa-input-row{display:grid;grid-template-columns:1fr auto auto;gap:8px;margin-top:14px;align-items:stretch}#xsup-auditor-input{min-height:64px;max-height:130px;resize:vertical;border:1px solid #d1d5db;border-radius:9px;padding:9px 11px;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}#xsup-auditor-run{border:0;border-radius:8px;padding:10px 14px;background:#4f46e5;color:#fff;font-weight:700;cursor:pointer}#xsup-auditor-stop{border:0;border-radius:8px;padding:10px 12px;background:#dc2626;color:#fff;font-weight:700;cursor:pointer}#xsup-auditor-run:disabled,#xsup-auditor-stop:disabled{opacity:.55;cursor:not-allowed}
       .xa-input-help{margin-top:5px;font-size:10px;color:#6b7280}.xa-toggle-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.xa-auto-download{display:flex;align-items:flex-start;gap:8px;margin-top:0;padding:8px 10px;border:1px solid #e5e7eb;border-radius:9px;background:#fafafa;cursor:pointer}.xa-auto-download input{margin-top:2px}.xa-auto-download span{display:flex;flex-direction:column;gap:2px}.xa-auto-download strong{font-size:11px}.xa-auto-download small{font-size:9px;color:#6b7280;line-height:1.35}.xa-status{margin-top:10px;padding:9px 10px;background:#f3f4f6;border-radius:8px;font-size:12px}.xa-status[data-kind="ok"]{background:#ecfdf5;color:#065f46}.xa-status[data-kind="error"]{background:#fef2f2;color:#991b1b}
       .xa-workspace{display:grid;grid-template-columns:220px minmax(0,1fr);gap:12px;margin-top:12px}.xa-sidebar{border:1px solid #e5e7eb;border-radius:11px;background:#fafafa;overflow:hidden;align-self:start;position:sticky;top:0}.xa-side-head{display:flex;align-items:center;justify-content:space-between;padding:9px 10px;border-bottom:1px solid #e5e7eb;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}.xa-side-head span:last-child{font-weight:600;color:#6b7280;text-transform:none;letter-spacing:0}.xa-job-list{max-height:62vh;overflow:auto;padding:6px}.xa-job-empty{padding:12px 8px;color:#6b7280;font-size:11px;line-height:1.5}.xa-job{width:100%;display:flex;gap:8px;align-items:flex-start;border:1px solid transparent;background:transparent;border-radius:9px;padding:8px;text-align:left;cursor:pointer;margin-bottom:4px}.xa-job:hover{background:#f3f4f6}.xa-job-selected{background:#eef2ff!important;border-color:#c7d2fe}.xa-job-icon{width:18px;text-align:center;font-weight:800;line-height:18px}.xa-job-main{min-width:0;display:flex;flex-direction:column;gap:1px;flex:1}.xa-job-main strong{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.xa-job-main em{font-size:10px;font-style:normal;color:#4b5563;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.xa-job-main small{font-size:9px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.xa-job-completed .xa-job-icon{color:#047857}.xa-job-failed .xa-job-icon{color:#b91c1c}.xa-job-running .xa-job-icon{color:#4f46e5}.xa-job-stopped .xa-job-icon{color:#6b7280}
@@ -7312,7 +7981,7 @@ ${bodyHtml}
       .xa-target-links{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}.xa-target-link{display:inline-flex;align-items:center;padding:6px 9px;border:1px solid #c7d2fe;border-radius:999px;background:#eef2ff;color:#3730a3;text-decoration:none;font-size:11px;font-weight:700}.xa-target-link:hover{background:#e0e7ff;text-decoration:underline}.xa-target-note{display:inline-flex;align-items:center;padding:6px 9px;border:1px dashed #d1d5db;border-radius:999px;color:#6b7280;font-size:10px}
       .xa-dashboard-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}.xa-dashboard-head h2{margin:0;font-size:17px}.xa-dashboard-head p{margin:3px 0 0;color:#6b7280;font-size:11px}.xa-dashboard-head>span{font-size:11px;color:#6b7280}.xa-stats{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:8px;margin-bottom:12px}.xa-stat{border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#fafafa}.xa-stat strong{display:block;font-size:20px}.xa-stat span{font-size:10px;color:#6b7280}.xa-stat.ok{background:#ecfdf5;border-color:#a7f3d0}.xa-stat.warn{background:#fffbeb;border-color:#fde68a}.xa-stat.bad{background:#fef2f2;border-color:#fecaca}.xa-stat.run{background:#eef2ff;border-color:#c7d2fe}.xa-dashboard-table-wrap{border:1px solid #e5e7eb;border-radius:10px;overflow:auto}.xa-dashboard-table{width:100%;border-collapse:collapse;font-size:10px;min-width:1450px}.xa-dashboard-table th{position:sticky;top:0;background:#f9fafb;text-align:left;padding:8px;border-bottom:1px solid #e5e7eb;color:#4b5563}.xa-dashboard-table td{padding:8px;border-bottom:1px solid #f3f4f6;vertical-align:top}.xa-dashboard-table tr:last-child td{border-bottom:0}.xa-dashboard-row.xa-row-running{background:linear-gradient(90deg,rgba(238,242,255,.45),transparent 35%)}.xa-table-link{border:0;background:none;padding:0;color:#4f46e5;text-decoration:underline;text-underline-offset:2px;font:inherit;font-weight:700;cursor:pointer;text-align:left}.xa-status-pill{display:inline-flex;padding:3px 6px;border-radius:999px;background:#f3f4f6;white-space:nowrap;margin-top:4px}.xa-pill-running{background:#eef2ff;color:#3730a3}.xa-pill-completed{background:#ecfdf5;color:#065f46}.xa-pill-failed{background:#fef2f2;color:#991b1b}.xa-pill-needs_selection,.xa-pill-needs_product{background:#fffbeb;color:#92400e}.xa-empty-cell{text-align:center;color:#6b7280;padding:25px!important}.xa-activity{max-width:260px;line-height:1.35;word-break:break-word}.xa-progress-wrap{min-width:150px}.xa-progress-wrap.compact{min-width:0;margin-top:4px}.xa-progress-top{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:10px;margin-bottom:4px}.xa-progress-top strong{font-size:10px;white-space:nowrap}.xa-progress-sub{font-size:8px;color:#6366f1;max-width:145px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.xa-progress-track{height:7px;border-radius:999px;background:#e5e7eb;overflow:hidden}.xa-progress-track span{display:block;height:100%;border-radius:999px;background:#6366f1;transition:width .3s ease}.xa-progress-wrap.compact .xa-progress-top{display:none}.xa-progress-wrap.compact .xa-progress-track{height:4px}.xa-job-completed .xa-progress-track span{background:#10b981}.xa-heartbeat{font-size:9px;white-space:normal;line-height:1.3;color:#4b5563}.xa-heartbeat[data-kind="live"]{color:#047857}.xa-heartbeat[data-kind="warn"]{color:#92400e;font-weight:700}.xa-heartbeat[data-kind="bad"]{color:#b91c1c;font-weight:700}.xa-heartbeat[data-kind="ok"]{color:#047857}.xa-selected-progress{margin-top:10px;border:1px solid #c7d2fe;border-radius:10px;padding:10px;background:#f8faff}.xa-selected-progress-main{display:grid;grid-template-columns:180px minmax(0,1fr);gap:12px;align-items:center}.xa-selected-progress-main>div:first-child span{display:block;font-size:9px;color:#6b7280}.xa-selected-progress-main>div:first-child strong{display:block;font-size:18px;margin-top:1px}.xa-selected-progress-meta{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:9px;color:#4b5563}.xa-selected-progress-meta em{font-style:normal}.xa-selected-progress-meta em[data-kind="warn"]{color:#92400e;font-weight:700}.xa-selected-progress-meta em[data-kind="bad"]{color:#b91c1c;font-weight:700}.xa-selected-progress-meta em[data-kind="live"]{color:#047857}
       .xa-dashboard-btn{width:calc(100% - 12px);margin:6px;border:1px solid #c7d2fe;background:#eef2ff;color:#3730a3;border-radius:9px;padding:8px;text-align:left;font-size:11px;font-weight:800;cursor:pointer}.xa-dashboard-btn:hover{background:#e0e7ff}
-      .xa-storage-global{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:9px;padding:9px 10px;border:1px solid #bbf7d0;border-radius:9px;background:#f0fdf4}.xa-storage-global>div:first-child strong{display:block;font-size:10px;color:#166534}.xa-storage-global>div:first-child span{display:block;font-size:8px;color:#4b5563;margin-top:2px}.xa-storage-global-status[data-kind="ok"]{color:#047857!important;font-weight:700}.xa-storage-global-status[data-kind="default"]{color:#4b5563!important;font-weight:700}.xa-storage-global button:disabled{opacity:.45;cursor:not-allowed}.xa-storage-card{border:1px solid #bbf7d0;border-radius:10px;padding:10px;margin-top:8px;background:#f7fff9}.xa-storage-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.xa-storage-head strong{display:block;font-size:12px}.xa-storage-head span{display:block;font-size:9px;color:#6b7280;margin-top:2px}.xa-decision-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:8px}.xa-decision-item{border:1px solid #e5e7eb;border-radius:8px;padding:7px 8px;background:#fafafa}.xa-decision-item span{display:block;font-size:8px;color:#6b7280;text-transform:uppercase;letter-spacing:.03em}.xa-decision-item strong{display:block;margin-top:2px;font-size:10px;word-break:break-word}.xa-knowledge-card{border:1px solid #dbeafe;border-radius:10px;padding:10px;margin-top:8px;background:#f8fbff}.xa-knowledge-title{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.xa-knowledge-title>div strong{display:block;font-size:12px}.xa-knowledge-title>div span{display:block;font-size:9px;color:#6b7280;margin-top:2px}.xa-knowledge-status{font-size:9px;border-radius:999px;padding:4px 7px;background:#f3f4f6;white-space:nowrap}.xa-knowledge-completed{background:#ecfdf5;color:#065f46}.xa-knowledge-generating{background:#eef2ff;color:#3730a3}.xa-knowledge-failed{background:#fef2f2;color:#991b1b}.xa-knowledge-queued{background:#fffbeb;color:#92400e}.xa-knowledge-error{margin-top:7px;padding:7px;border-radius:7px;background:#fef2f2;color:#991b1b;font-size:10px}.xa-knowledge-preview{margin-top:9px;max-height:260px;overflow:auto;border-top:1px solid #e5e7eb;padding-top:7px;font-size:11px}.xa-knowledge-cell{display:flex;flex-direction:column;gap:2px;min-width:145px}.xa-knowledge-cell strong{font-size:9px}.xa-knowledge-cell small{font-size:8px;color:#6b7280;line-height:1.3}.xa-help-dot{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;margin-left:5px;border:1px solid #cbd5e1;border-radius:999px;color:#64748b;background:#fff;font-size:9px;font-weight:800;vertical-align:middle;cursor:help}.xa-help-dot:hover,.xa-help-dot:focus{border-color:#818cf8;color:#4338ca;background:#eef2ff;outline:none;box-shadow:0 0 0 2px rgba(99,102,241,.12)}.xa-floating-tooltip{position:fixed;z-index:2147483647;max-width:340px;padding:8px 10px;border-radius:8px;background:#111827;color:#fff;font-size:10px;line-height:1.45;font-weight:500;box-shadow:0 10px 30px rgba(15,23,42,.25);pointer-events:none;white-space:normal;word-break:normal}.xa-floating-tooltip:after{content:"";position:absolute;left:50%;transform:translateX(-50%);border:6px solid transparent}.xa-floating-tooltip[data-placement="bottom"]:after{top:-12px;border-bottom-color:#111827}.xa-floating-tooltip[data-placement="top"]:after{bottom:-12px;border-top-color:#111827}.xa-help-repo{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;margin:2px 0 14px;border:1px solid #c7d2fe;border-radius:10px;background:#eef2ff}.xa-help-repo>div{min-width:0}.xa-help-repo strong{display:block;font-size:12px;color:#312e81}.xa-help-repo span{display:block;margin-top:2px;color:#64748b;font-size:10px}.xa-help-repo a:not(.xa-help-repo-button){display:block;margin-top:5px;color:#4338ca;font-size:10px;overflow-wrap:anywhere}.xa-help-repo-button{display:inline-flex;align-items:center;flex:0 0 auto;border:1px solid #a5b4fc;background:#fff;color:#3730a3;border-radius:8px;padding:7px 10px;text-decoration:none!important;font-size:10px;font-weight:800;white-space:nowrap}.xa-decision-group{margin-top:9px}.xa-decision-group-title{font-size:10px;font-weight:850;color:#374151;margin:0 0 6px;text-transform:uppercase;letter-spacing:.04em}.xa-decision-item small{display:block;margin-top:4px;color:#6b7280;font-size:8.5px;line-height:1.35;font-weight:500}.xa-decision-empty{padding:9px;border:1px dashed #d1d5db;border-radius:8px;color:#6b7280;font-size:10px}.xa-pipeline-row{grid-template-columns:22px 150px minmax(0,1fr)}.xa-pipeline-action{border:1px solid #c7d2fe;background:#fff;color:#3730a3;border-radius:7px;padding:5px 8px;font-size:9px;font-weight:750;cursor:pointer;white-space:nowrap}.xa-pipeline-action:disabled{opacity:.45;cursor:not-allowed}.xa-knowledge-decision{margin-top:7px;padding:7px 8px;border-radius:7px;background:#f8fafc;color:#475569;font-size:9.5px;line-height:1.4}.xa-reuse-summary{margin:10px 0 8px;border:1px solid #dbe4f0;border-radius:10px;background:#fbfdff;overflow:hidden}.xa-reuse-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 10px;border-bottom:1px solid #e5e7eb}.xa-reuse-head>div:first-child strong{display:block;font-size:10.5px;color:#1f2937}.xa-reuse-head>div:first-child span{display:block;font-size:8.5px;color:#6b7280;margin-top:2px}.xa-reuse-actions{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}.xa-reuse-actions button{padding:5px 7px;border:1px solid #cbd5e1;background:#fff;border-radius:7px;font-size:8.5px;font-weight:750;color:#334155;cursor:pointer}.xa-reuse-actions button:hover{border-color:#818cf8;color:#4338ca}.xa-reuse-actions button:disabled{opacity:.42;cursor:not-allowed}.xa-reuse-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.xa-reuse-item{padding:8px 10px;min-width:0;border-right:1px solid #eef2f7}.xa-reuse-item:last-child{border-right:0}.xa-reuse-item>span{display:block;font-size:8px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:800}.xa-reuse-item>strong{display:block;font-size:10px;margin-top:2px;color:#334155}.xa-reuse-item>small{display:block;font-size:8.5px;color:#64748b;margin-top:1px}.xa-reuse-item>em{display:block;font-style:normal;font-size:8.2px;line-height:1.35;color:#64748b;margin-top:3px;max-height:35px;overflow:hidden}.xa-reuse-item.ok>strong{color:#047857}.xa-reuse-item.run>strong{color:#4338ca}.xa-reuse-item.bad>strong{color:#b91c1c}.xa-reuse-item-head{display:flex;align-items:center;justify-content:space-between;gap:8px}.xa-reuse-item-actions{margin-top:7px;padding-top:6px;border-top:1px solid #eef2f7}.xa-reuse-item-actions button{width:100%;border:1px solid #c7d2fe;background:#fff;color:#3730a3;border-radius:7px;padding:6px 8px;font-size:8.5px;font-weight:800;cursor:pointer}.xa-reuse-item-actions button:hover{background:#eef2ff;border-color:#818cf8}.xa-reuse-item-actions button:disabled{opacity:.42;cursor:not-allowed;background:#f8fafc}.xa-job-running .xa-job-icon,.xa-pipeline-active .xa-pipeline-icon{display:inline-block;animation:xa-spin 1s linear infinite}@keyframes xa-spin{to{transform:rotate(360deg)}}.xa-source-badge{display:inline-flex;align-items:center;border-radius:999px;padding:2px 6px;font-size:7.5px;font-weight:850;letter-spacing:.03em;white-space:nowrap}.xa-source-badge.reused{background:#dcfce7;color:#166534}.xa-source-badge.new{background:#dbeafe;color:#1d4ed8}.xa-source-badge.checking{background:#ede9fe;color:#6d28d9}.xa-source-badge.failed{background:#fee2e2;color:#b91c1c}.xa-source-badge.pending{background:#f3f4f6;color:#6b7280}.xa-prior-result{display:block!important;margin-top:5px!important;padding-top:5px;border-top:1px dashed #dbe4f0;color:#7c3aed!important;font-size:8px!important;line-height:1.35}.xa-decision-list{display:flex;flex-direction:column;gap:6px}.xa-decision-row{width:100%;box-sizing:border-box;border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:9px 11px}.xa-decision-row.ticket{border-left:3px solid #818cf8}.xa-decision-row.knowledge{border-left:3px solid #a7f3d0}.xa-decision-row-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.xa-decision-row-head>span{font-size:8.5px;color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:.03em}.xa-decision-row-head>strong{font-size:10.5px;color:#111827;text-align:right}.xa-decision-row-explanation{margin-top:6px;padding-top:6px;border-top:1px solid #f1f5f9;color:#526071;font-size:9.5px;line-height:1.45;max-width:none}@media(max-width:900px){.xa-reuse-head{align-items:flex-start;flex-direction:column}.xa-reuse-grid{grid-template-columns:1fr}.xa-reuse-item{border-right:0;border-bottom:1px solid #eef2f7}.xa-reuse-item:last-child{border-bottom:0}}.xa-product-mode{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:9px;background:#fafafa}.xa-product-mode>div strong{display:block;font-size:11px}.xa-product-mode>div small{display:block;margin-top:2px;color:#6b7280;font-size:9px}.xa-product-mode select{border:1px solid #cbd5e1;border-radius:7px;padding:6px 8px;background:#fff;font-size:10px;color:#334155}.xa-product-card{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px;padding:9px 10px;border:1px solid #dbeafe;border-radius:9px;background:#f8fbff}.xa-product-card.needs{border-color:#fde68a;background:#fffbeb}.xa-product-card>div{min-width:0}.xa-product-card span{display:block;font-size:8px;color:#64748b;text-transform:uppercase;font-weight:800;letter-spacing:.04em}.xa-product-card strong{display:block;font-size:12px;margin-top:1px}.xa-product-card small{display:block;font-size:8.5px;color:#64748b;margin-top:2px;line-height:1.3}.xa-product-card button{flex:0 0 auto;border:1px solid #a5b4fc;background:#fff;color:#3730a3;border-radius:7px;padding:6px 8px;font-size:9px;font-weight:800;cursor:pointer}.xa-product-card button:disabled{opacity:.45;cursor:not-allowed}.xa-product-locked{display:inline-flex;align-items:center;border-radius:999px;padding:3px 7px;background:#f3f4f6;color:#64748b;font-size:8.5px;font-weight:750;white-space:nowrap;cursor:help}.xa-product-reason{padding:8px 9px;margin-bottom:8px;border:1px solid #e5e7eb;border-radius:8px;background:#f8fafc;color:#475569;font-size:10px;line-height:1.4}.xa-product-options{display:grid;grid-template-columns:1fr;gap:8px}.xa-product-option{position:relative;text-align:left;border:1px solid #e5e7eb;background:#fff;border-radius:9px;padding:10px 11px;cursor:pointer}.xa-product-option:hover{border-color:#818cf8;background:#f8faff}.xa-product-option.suggested{border-color:#a5b4fc;background:#eef2ff}.xa-product-option strong{display:block;font-size:12px}.xa-product-option span{display:block;margin-top:3px;color:#64748b;font-size:9px;line-height:1.35}.xa-product-option em{position:absolute;right:8px;top:8px;font-style:normal;font-size:8px;font-weight:800;color:#4338ca;background:#fff;border:1px solid #c7d2fe;border-radius:999px;padding:2px 6px}.xa-help-modal{width:min(860px,96vw)}.xa-help-body{padding:8px 4px 2px;font-size:11px;line-height:1.55}.xa-help-body h3{margin:14px 0 5px;font-size:13px}.xa-help-body p{margin:5px 0}.xa-help-body ul{margin:5px 0 5px 20px;padding:0}.xa-help-body li{margin:4px 0}
+      .xa-storage-global{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:9px;padding:9px 10px;border:1px solid #bbf7d0;border-radius:9px;background:#f0fdf4}.xa-storage-global>div:first-child strong{display:block;font-size:10px;color:#166534}.xa-storage-global>div:first-child span{display:block;font-size:8px;color:#4b5563;margin-top:2px}.xa-storage-global-status[data-kind="ok"]{color:#047857!important;font-weight:700}.xa-storage-global-status[data-kind="default"]{color:#4b5563!important;font-weight:700}.xa-storage-global button:disabled{opacity:.45;cursor:not-allowed}.xa-storage-card{border:1px solid #bbf7d0;border-radius:10px;padding:10px;margin-top:8px;background:#f7fff9}.xa-storage-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.xa-storage-head strong{display:block;font-size:12px}.xa-storage-head span{display:block;font-size:9px;color:#6b7280;margin-top:2px}.xa-decision-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:8px}.xa-decision-item{border:1px solid #e5e7eb;border-radius:8px;padding:7px 8px;background:#fafafa}.xa-decision-item span{display:block;font-size:8px;color:#6b7280;text-transform:uppercase;letter-spacing:.03em}.xa-decision-item strong{display:block;margin-top:2px;font-size:10px;word-break:break-word}.xa-knowledge-card{border:1px solid #dbeafe;border-radius:10px;padding:10px;margin-top:8px;background:#f8fbff}.xa-knowledge-title{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.xa-knowledge-title>div strong{display:block;font-size:12px}.xa-knowledge-title>div span{display:block;font-size:9px;color:#6b7280;margin-top:2px}.xa-knowledge-status{font-size:9px;border-radius:999px;padding:4px 7px;background:#f3f4f6;white-space:nowrap}.xa-knowledge-completed{background:#ecfdf5;color:#065f46}.xa-knowledge-generating{background:#eef2ff;color:#3730a3}.xa-knowledge-failed{background:#fef2f2;color:#991b1b}.xa-knowledge-queued{background:#fffbeb;color:#92400e}.xa-knowledge-error{margin-top:7px;padding:7px;border-radius:7px;background:#fef2f2;color:#991b1b;font-size:10px}.xa-knowledge-preview{margin-top:9px;max-height:360px;overflow:auto;border-top:1px solid #e5e7eb;padding-top:7px;font-size:11px}.xa-knowledge-cell{display:flex;flex-direction:column;gap:2px;min-width:145px}.xa-knowledge-cell strong{font-size:9px}.xa-knowledge-cell small{font-size:8px;color:#6b7280;line-height:1.3}.xa-help-dot{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;margin-left:5px;border:1px solid #cbd5e1;border-radius:999px;color:#64748b;background:#fff;font-size:9px;font-weight:800;vertical-align:middle;cursor:help}.xa-help-dot:hover,.xa-help-dot:focus{border-color:#818cf8;color:#4338ca;background:#eef2ff;outline:none;box-shadow:0 0 0 2px rgba(99,102,241,.12)}.xa-floating-tooltip{position:fixed;z-index:2147483647;max-width:340px;padding:8px 10px;border-radius:8px;background:#111827;color:#fff;font-size:10px;line-height:1.45;font-weight:500;box-shadow:0 10px 30px rgba(15,23,42,.25);pointer-events:none;white-space:normal;word-break:normal}.xa-floating-tooltip:after{content:"";position:absolute;left:50%;transform:translateX(-50%);border:6px solid transparent}.xa-floating-tooltip[data-placement="bottom"]:after{top:-12px;border-bottom-color:#111827}.xa-floating-tooltip[data-placement="top"]:after{bottom:-12px;border-top-color:#111827}.xa-help-repo{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;margin:2px 0 14px;border:1px solid #c7d2fe;border-radius:10px;background:#eef2ff}.xa-help-repo>div{min-width:0}.xa-help-repo strong{display:block;font-size:12px;color:#312e81}.xa-help-repo span{display:block;margin-top:2px;color:#64748b;font-size:10px}.xa-help-repo a:not(.xa-help-repo-button){display:block;margin-top:5px;color:#4338ca;font-size:10px;overflow-wrap:anywhere}.xa-help-repo-button{display:inline-flex;align-items:center;flex:0 0 auto;border:1px solid #a5b4fc;background:#fff;color:#3730a3;border-radius:8px;padding:7px 10px;text-decoration:none!important;font-size:10px;font-weight:800;white-space:nowrap}.xa-decision-group{margin-top:9px}.xa-decision-group-title{font-size:10px;font-weight:850;color:#374151;margin:0 0 6px;text-transform:uppercase;letter-spacing:.04em}.xa-decision-item small{display:block;margin-top:4px;color:#6b7280;font-size:8.5px;line-height:1.35;font-weight:500}.xa-decision-empty{padding:9px;border:1px dashed #d1d5db;border-radius:8px;color:#6b7280;font-size:10px}.xa-pipeline-row{grid-template-columns:22px 150px minmax(0,1fr)}.xa-pipeline-action{border:1px solid #c7d2fe;background:#fff;color:#3730a3;border-radius:7px;padding:5px 8px;font-size:9px;font-weight:750;cursor:pointer;white-space:nowrap}.xa-pipeline-action:disabled{opacity:.45;cursor:not-allowed}.xa-knowledge-decision{margin-top:7px;padding:7px 8px;border-radius:7px;background:#f8fafc;color:#475569;font-size:9.5px;line-height:1.4}.xa-reuse-summary{margin:10px 0 8px;border:1px solid #dbe4f0;border-radius:10px;background:#fbfdff;overflow:hidden}.xa-reuse-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 10px;border-bottom:1px solid #e5e7eb}.xa-reuse-head>div:first-child strong{display:block;font-size:10.5px;color:#1f2937}.xa-reuse-head>div:first-child span{display:block;font-size:8.5px;color:#6b7280;margin-top:2px}.xa-reuse-actions{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}.xa-reuse-actions button{padding:5px 7px;border:1px solid #cbd5e1;background:#fff;border-radius:7px;font-size:8.5px;font-weight:750;color:#334155;cursor:pointer}.xa-reuse-actions button:hover{border-color:#818cf8;color:#4338ca}.xa-reuse-actions button:disabled{opacity:.42;cursor:not-allowed}.xa-reuse-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.xa-reuse-item{padding:8px 10px;min-width:0;border-right:1px solid #eef2f7}.xa-reuse-item:last-child{border-right:0}.xa-reuse-item>span{display:block;font-size:8px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:800}.xa-reuse-item>strong{display:block;font-size:10px;margin-top:2px;color:#334155}.xa-reuse-item>small{display:block;font-size:8.5px;color:#64748b;margin-top:1px}.xa-reuse-item>em{display:block;font-style:normal;font-size:8.2px;line-height:1.35;color:#64748b;margin-top:3px;max-height:35px;overflow:hidden}.xa-reuse-item.ok>strong{color:#047857}.xa-reuse-item.run>strong{color:#4338ca}.xa-reuse-item.bad>strong{color:#b91c1c}.xa-reuse-item-head{display:flex;align-items:center;justify-content:space-between;gap:8px}.xa-reuse-item-actions{margin-top:7px;padding-top:6px;border-top:1px solid #eef2f7}.xa-reuse-item-actions button{width:100%;border:1px solid #c7d2fe;background:#fff;color:#3730a3;border-radius:7px;padding:6px 8px;font-size:9.5px;font-weight:800;cursor:pointer}.xa-reuse-item-actions button:hover{background:#eef2ff;border-color:#818cf8}.xa-reuse-item-actions button:disabled{opacity:.42;cursor:not-allowed;background:#f8fafc}.xa-job-running .xa-job-icon,.xa-pipeline-active .xa-pipeline-icon{display:inline-block;animation:xa-spin 1s linear infinite}@keyframes xa-spin{to{transform:rotate(360deg)}}.xa-source-badge{display:inline-flex;align-items:center;border-radius:999px;padding:2px 6px;font-size:7.5px;font-weight:850;letter-spacing:.03em;white-space:nowrap}.xa-source-badge.reused{background:#dbeafe;color:#1d4ed8}.xa-source-badge.new{background:#dbeafe;color:#1d4ed8}.xa-source-badge.checking{background:#ede9fe;color:#6d28d9}.xa-source-badge.failed{background:#fee2e2;color:#b91c1c}.xa-source-badge.pending{background:#f3f4f6;color:#6b7280}.xa-prior-result{display:block!important;margin-top:5px!important;padding-top:5px;border-top:1px dashed #dbe4f0;color:#7c3aed!important;font-size:8px!important;line-height:1.35}.xa-decision-list{display:flex;flex-direction:column;gap:6px}.xa-decision-row{width:100%;box-sizing:border-box;border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:9px 11px}.xa-decision-row.ticket{border-left:3px solid #818cf8}.xa-decision-row.knowledge{border-left:3px solid #a7f3d0}.xa-decision-row-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.xa-decision-row-head>span{font-size:8.5px;color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:.03em}.xa-decision-row-head>strong{font-size:10.5px;color:#111827;text-align:right}.xa-decision-row-explanation{margin-top:6px;padding-top:6px;border-top:1px solid #f1f5f9;color:#526071;font-size:9.5px;line-height:1.45;max-width:none}@media(max-width:900px){.xa-reuse-head{align-items:flex-start;flex-direction:column}.xa-reuse-grid{grid-template-columns:1fr}.xa-reuse-item{border-right:0;border-bottom:1px solid #eef2f7}.xa-reuse-item:last-child{border-bottom:0}}.xa-product-mode{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:9px;background:#fafafa}.xa-product-mode>div strong{display:block;font-size:11px}.xa-product-mode>div small{display:block;margin-top:2px;color:#6b7280;font-size:9px}.xa-product-mode select{border:1px solid #cbd5e1;border-radius:7px;padding:6px 8px;background:#fff;font-size:10px;color:#334155}.xa-product-card{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px;padding:9px 10px;border:1px solid #dbeafe;border-radius:9px;background:#f8fbff}.xa-product-card.needs{border-color:#fde68a;background:#fffbeb}.xa-product-card>div{min-width:0}.xa-product-card span{display:block;font-size:8px;color:#64748b;text-transform:uppercase;font-weight:800;letter-spacing:.04em}.xa-product-card strong{display:block;font-size:12px;margin-top:1px}.xa-product-card small{display:block;font-size:8.5px;color:#64748b;margin-top:2px;line-height:1.3}.xa-product-card button{flex:0 0 auto;border:1px solid #a5b4fc;background:#fff;color:#3730a3;border-radius:7px;padding:6px 8px;font-size:9px;font-weight:800;cursor:pointer}.xa-product-card button:disabled{opacity:.45;cursor:not-allowed}.xa-product-locked{display:inline-flex;align-items:center;border-radius:999px;padding:3px 7px;background:#f3f4f6;color:#64748b;font-size:8.5px;font-weight:750;white-space:nowrap;cursor:help}.xa-product-reason{padding:8px 9px;margin-bottom:8px;border:1px solid #e5e7eb;border-radius:8px;background:#f8fafc;color:#475569;font-size:10px;line-height:1.4}.xa-product-options{display:grid;grid-template-columns:1fr;gap:8px}.xa-product-option{position:relative;text-align:left;border:1px solid #e5e7eb;background:#fff;border-radius:9px;padding:10px 11px;cursor:pointer}.xa-product-option:hover{border-color:#818cf8;background:#f8faff}.xa-product-option.suggested{border-color:#a5b4fc;background:#eef2ff}.xa-product-option strong{display:block;font-size:12px}.xa-product-option span{display:block;margin-top:3px;color:#64748b;font-size:9px;line-height:1.35}.xa-product-option em{position:absolute;right:8px;top:8px;font-style:normal;font-size:8px;font-weight:800;color:#4338ca;background:#fff;border:1px solid #c7d2fe;border-radius:999px;padding:2px 6px}.xa-help-modal{width:min(860px,96vw)}.xa-help-body{padding:8px 4px 2px;font-size:11px;line-height:1.55}.xa-help-body h3{margin:14px 0 5px;font-size:13px}.xa-help-body p{margin:5px 0}.xa-help-body ul{margin:5px 0 5px 20px;padding:0}.xa-help-body li{margin:4px 0}
       .xa-sfdc-card{border:1px solid #e5e7eb;border-radius:9px;padding:9px;margin-top:7px;background:#fafafa}.xa-sfdc-card.selected{border-color:#818cf8;background:#eef2ff}.xa-sfdc-title{display:flex;justify-content:space-between;gap:8px;align-items:center}.xa-selected-badge{font-size:9px;border-radius:999px;padding:3px 6px;background:#dcfce7;color:#166534}.xa-sfdc-detail-text{margin-top:5px;font-size:10px;line-height:1.45;color:#4b5563;word-break:break-word}.xa-sfdc-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:7px}.xa-sfdc-actions a{color:#4f46e5;text-decoration:underline;font-size:10px}.xa-sfdc-actions span{font-size:10px;color:#6b7280}.xa-sfdc-actions button{border:1px solid #c7d2fe;background:#fff;color:#3730a3;border-radius:7px;padding:5px 8px;font-size:10px;font-weight:700;cursor:pointer}
       .xa-modal-backdrop{position:fixed;inset:0;z-index:2147483647;background:rgba(17,24,39,.45);display:flex;align-items:center;justify-content:center;padding:20px}.xa-modal{width:min(760px,96vw);max-height:82vh;overflow:auto;background:#fff;border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,.3);padding:14px}.xa-modal-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;border-bottom:1px solid #e5e7eb;padding-bottom:10px}.xa-modal-head strong{display:block;font-size:15px}.xa-modal-head span{display:block;margin-top:3px;font-size:11px;color:#6b7280}.xa-modal-body{padding-top:4px}.xa-modal-select{margin-left:auto!important;background:#4f46e5!important;color:#fff!important;border-color:#4f46e5!important}
       .xa-section-title{margin-top:14px;font-size:11px;font-weight:800;color:#374151;text-transform:uppercase;letter-spacing:.04em}
