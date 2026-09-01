@@ -22,7 +22,7 @@ It does **not** automatically publish Knowledge or modify documentation.
 
 > Recommended repository path for the image: `docs/images/kcs-quality-overview.png`
 
-![KCS Quality Review Overview](docs/images/kcs-quality-overview.png)
+![KCS Quality Review Overview](docs/kcs-quality-overview.png)
 
 ---
 
