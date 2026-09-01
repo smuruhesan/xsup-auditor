@@ -22,10 +22,8 @@ It does **not** automatically publish Knowledge or modify documentation.
 
 > Recommended repository path for the image: `docs/images/kcs-quality-overview.png`
 
-![KCS Quality Review Overview](docs/images/kcs-quality-overview.png)
+<img width="1600" height="900" alt="kcs-quality-overview" src="https://github.com/user-attachments/assets/6b271cbb-9f58-479a-b1e5-1c4f34358524" />
 
-
-![Uploading kcs-quality-overview.png…]()
 
 ---
 
