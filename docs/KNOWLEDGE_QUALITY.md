@@ -22,50 +22,71 @@ It does **not** automatically publish Knowledge or modify documentation.
 
 > Recommended repository path for the image: `docs/images/kcs-quality-overview.png`
 
-<img width="1600" height="900" alt="kcs-quality-overview" src="https://github.com/user-attachments/assets/6b271cbb-9f58-479a-b1e5-1c4f34358524" />
-
+![KCS Quality Review Overview](docs/images/kcs-quality-overview.png)
 
 ---
 
 # How the Knowledge quality workflow works
 
-The easiest way to understand the flow is:
+The Knowledge workflow follows the same sequence every time. A fresh Knowledge artifact normally uses **two AI prompts**, with one additional repair prompt only when a safe, repairable issue is found.
 
 ```text
-Retrospective + TACO + original evidence
-                 │
-                 ▼
-        1. Generate the draft
-                 │
-                 ▼
-      2. Independent AI review
-                 │
-                 ▼
-       3. Automatic code checks
-                 │
-                 ▼
-       4. Repair once if needed
-                 │
-                 ▼
- READY / DRAFTABLE / NOT READY
-                 │
-                 ▼
-          5. Human review
+XSUP Retrospective + TACO + Original Evidence
+                    │
+                    ▼
+        1. Generate Knowledge Draft
+           Prompt creates reusable KCS /
+           Doc / Runbook / Known Issue
+                    │
+                    ▼
+        2. Independent Quality Review
+           Separate AI prompt checks:
+           accuracy, sources, usefulness,
+           completeness and uncertainty
+                    │
+                    ▼
+        3. Automatic Code Checks
+           Structure, At a Glance,
+           references, metadata,
+           placeholders and readiness
+                    │
+                    ▼
+        4. Repair Once — if needed
+           Only safe/repairable issues
+           are corrected automatically
+                    │
+                    ▼
+        5. Final Knowledge Status
+           🟢 READY
+           🟠 DRAFTABLE
+           🔴 NOT READY
+                    │
+                    ▼
+              Human Review
+                    │
+                    ▼
+              Publication
 ```
 
-There are normally **two AI prompts** for a fresh Knowledge artifact.
-
-| Stage | What happens |
+| Stage | Main purpose |
 |---|---|
-| **Prompt 1 — Knowledge Generation** | Creates the reusable KCS / documentation / runbook / known-issue draft |
-| **Prompt 2 — Independent Quality Review** | Reviews the draft for technical quality, evidence, usefulness, completeness, and publication readiness |
-| **Prompt 3 — Repair** | Runs only when an automatic check finds a repairable issue |
+| **1. Generate** | Create a reusable technical draft from the retrospective, TACO analysis, original evidence, and available Knowledge sources |
+| **2. AI Review** | Independently challenge the draft for technical accuracy, evidence support, usefulness, completeness, and uncertainty |
+| **3. Code Checks** | Verify structure, references, metadata hygiene, placeholders, review markers, and readiness rules that AI cannot self-certify |
+| **4. Repair** | Run one controlled repair prompt only when the identified issue is safe to repair without inventing new facts |
+| **5. Readiness** | Classify the result as **READY**, **DRAFTABLE**, or **NOT READY** so the reviewer knows how to treat the draft |
+| **6. Human Review** | Perform the final technical/editorial review and publish only through the normal approved process |
 
-The repair prompt is **optional** and can run only once.
+## How many AI prompts are used?
 
-The Retrospective Audit prompt happens earlier and is separate from this Knowledge workflow.
+| Situation | Knowledge prompts used |
+|---|---:|
+| Fresh Knowledge generation, no repair needed | **2** |
+| Fresh Knowledge generation with one repair pass | **3** |
+| Current enriched draft reused | **1** quality-review prompt, plus optional repair |
+| Current final quality-reviewed artifact reused | **0** new Knowledge prompts |
 
----
+The **Retrospective Audit prompt happens earlier** and is separate from this Knowledge-generation flow.
 
 # Step 1 — Generate a reusable Knowledge draft
 
