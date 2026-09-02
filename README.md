@@ -27,7 +27,7 @@ Use the self-contained installer:
 
 [Download the XSUP Auditor Bookmark Installer](./dist/XSUP_Auditor_Bookmark_Installer.html)
 
-[Download the XSUP Auditor Bookmark Installer]([./dist/XSUP_Auditor_Bookmark_Installer.html](https://github.com/smuruhesan/xsup-auditor/blob/main/dist/XSUP_Auditor_Bookmark_Installer.html)
+[Download the XSUP Auditor Bookmark Installer](https://github.com/smuruhesan/xsup-auditor/blob/main/dist/XSUP_Auditor_Bookmark_Installer.html)
 
 1. Open the HTML file locally in Chrome.
 2. Show the bookmarks bar (`Cmd + Shift + B` on macOS; `Ctrl + Shift + B` on Windows/Linux).
