@@ -25,7 +25,7 @@ The tool coordinates TACopilot, TACO Analysis, original Jira/SFDC evidence and C
 
 Use the self-contained installer:
 
-[**⬇ Download XSUP Auditor Bookmark Installer**](https://github.com/smuruhesan/xsup-auditor/releases/tag/v1.0.0)
+[**⬇ Download XSUP Auditor Bookmark Installer**](https://github.com/smuruhesan/xsup-auditor/releases/download/v1.0.0/XSUP_Auditor_Bookmark_Installer.html)
 
 1. Open the HTML file locally in Chrome.
 2. Show the bookmarks bar (`Cmd + Shift + B` on macOS; `Ctrl + Shift + B` on Windows/Linux).
