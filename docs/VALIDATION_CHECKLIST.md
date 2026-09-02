@@ -247,7 +247,7 @@ Confirm:
 - [ ] READY only with no material validation item
 - [ ] DRAFTABLE when material validation remains
 - [ ] NOT READY for blocking quality/safety failure
-- [ ] NOT READY not treated as final downloadable Knowledge
+- [ ] NOT READY usable draft is preserved/downloadable for review but clearly blocked for publication
 
 ---
 
@@ -288,3 +288,62 @@ Confirm:
 - [ ] Technical Guide preserves current invariants
 - [ ] Troubleshooting covers quality-gate failures
 - [ ] no real customer/case examples committed
+
+---
+
+# Bookmark distribution
+
+- [ ] installer HTML opens locally
+- [ ] blue XSUP Auditor link can be dragged to bookmarks when browser permits
+- [ ] Copy bookmark URL fallback works
+- [ ] manually created bookmark retains `javascript:` prefix
+- [ ] bookmark runs only on intended TACopilot page context
+- [ ] bookmark and canonical source contain matching current logic
+- [ ] DevTools Snippet fallback still works
+
+# Direct Generate KCS
+
+- [ ] accepts XSUP input
+- [ ] accepts 8-digit SFDC input
+- [ ] SFDC-only input does not fabricate an XSUP
+- [ ] linked XSUP retained when discovered
+- [ ] product/context detection works
+- [ ] current TACO reused when appropriate
+- [ ] stale/incomplete TACO refreshed when required
+- [ ] original evidence collected
+- [ ] retrospective field review is skipped/not applicable
+- [ ] no Review Paste Comment generated for direct KCS basis
+- [ ] `CREATE KCS` selected explicitly
+- [ ] `KCS_DRAFT` artifact used
+- [ ] full Knowledge quality pipeline runs
+- [ ] direct-KCS reuse identity does not incorrectly reuse incompatible artifact intent
+
+# Knowledge classification during retrospective
+
+Test cases for each prompt outcome:
+
+- [ ] CREATE KCS — repeatable resolution pattern
+- [ ] UPDATE EXISTING KCS — existing KCS has material gap
+- [ ] UPDATE ADMIN/TECH GUIDE — product behavior/config/expectation documentation gap
+- [ ] CREATE/UPDATE RUNBOOK — internal investigation/evidence workflow is the reusable value
+- [ ] KNOWN ISSUE/RELEASE NOTE — version-specific defect/limitation
+- [ ] NO KNOWLEDGE ACTION — no material reusable gap
+- [ ] UNDETERMINED — insufficient evidence
+- [ ] JavaScript maps action to correct artifact type/template
+- [ ] direct KCS bypasses category selection and remains KCS
+
+# Current Knowledge quality fallback
+
+- [ ] generation prompt adds preliminary review markers for unsupported high-risk claims
+- [ ] normal quality prompt succeeds
+- [ ] simulated retryable quality rejection triggers one compact quality retry
+- [ ] compact retry is attempted only once
+- [ ] usable draft preserved when quality still cannot complete
+- [ ] preserved draft status is NOT READY
+- [ ] internal status can be QUALITY_REVIEW_ERROR
+- [ ] QUALITY_REVIEW_ERROR is not mislabeled as substantive AI FAIL
+- [ ] Review Required section shows What to review and Why
+- [ ] review-item count includes quality/deterministic/article validation items consistently
+- [ ] raw `<ref>`, verification-warning or equivalent source/provenance markup is not exposed in final human-facing content
+- [ ] NOT READY usable draft remains downloadable/reviewable
+- [ ] failed reserved for no usable artifact

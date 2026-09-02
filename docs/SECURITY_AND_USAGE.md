@@ -1,6 +1,6 @@
 # Security & Usage
 
-XSUP Retrospective Auditor is an internal, unofficial APAC Cortex TAC workflow tool.
+XSUP Auditor & KCS Generator is an internal, unofficial APAC Cortex TAC workflow tool.
 
 It can process sensitive customer/internal Support information.
 
@@ -121,3 +121,25 @@ Do not use the Auditor to bypass:
 - DLP
 - managed-browser restrictions
 - approved software/download controls
+
+---
+
+# Bookmark distribution security model
+
+The distributed bookmark is self-contained and intended to execute only while the reviewer is already on the approved TACopilot page.
+
+It does not require:
+
+- hosting JavaScript on the TACopilot backend;
+- loading JavaScript from GitHub at runtime;
+- an external CDN;
+- a local web server;
+- embedded credentials.
+
+The bookmark and DevTools Snippet both rely on the reviewer's existing authenticated TACopilot browser session and same-origin access.
+
+If a managed-browser policy disables bookmarklets, downloads, local files, clipboard access or other browser behavior, do not bypass that policy. Use only an approved supported method.
+
+# Direct KCS data boundary
+
+Direct Generate KCS does not weaken the evidence/security boundary. It still uses TACO plus original case evidence and the same Knowledge source/quality rules. The difference is only that the retrospective Support-owned field-review prompt is skipped.

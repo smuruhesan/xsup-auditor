@@ -1,344 +1,485 @@
 # User Guide
 
-This guide explains the XSUP Retrospective Auditor workflow in practical terms.
+This guide explains how to install and use **XSUP Auditor & KCS Generator**.
+
+The tool has two workflows:
+
+- **Run XSUP Retrospective** — full product-specific retrospective review.
+- **Generate KCS** — direct KCS generation from an XSUP or SFDC case without the retrospective field-review step.
 
 ---
 
-# What the tool does
+# 1. Install / run the Auditor
 
-For each XSUP, the Auditor can automatically:
+## Option 1 — Bookmark installer (recommended)
 
-1. resolve the linked SFDC case
-2. collect original Jira/SFDC evidence
-3. detect the product
-4. check whether TACO Analysis is current
-5. reuse, wait for or refresh TACO
-6. reuse or generate the Retrospective Audit
-7. show Support-owned field decisions
-8. recommend a Knowledge action
-9. reuse or generate the Knowledge artifact
-10. quality-review and validate the Knowledge
-11. save/download the results
+File:
+
+```text
+dist/XSUP_Auditor_Bookmark_Installer.html
+```
+
+### First-time installation
+
+1. Open `XSUP_Auditor_Bookmark_Installer.html` locally in Chrome.
+2. Show the Chrome bookmarks bar:
+   - macOS: `Cmd + Shift + B`
+3. Drag the blue **XSUP Auditor** button onto the bookmarks bar.
+4. Open TACopilot.
+5. Click the **XSUP Auditor** bookmark.
+
+The Auditor opens on the current TACopilot page.
+
+### If drag-and-drop fails
+
+The HTML installer also contains **Copy bookmark URL**.
+
+1. Click **Copy bookmark URL**.
+2. Right-click the Chrome bookmarks bar.
+3. Choose **Add page**.
+4. Name it:
+
+```text
+XSUP Auditor
+```
+
+5. Paste the copied value into the **URL** field.
+6. Save the bookmark.
+7. Open TACopilot and click it.
+
+### Important
+
+The bookmark is self-contained. It does not fetch the Auditor from GitHub, TACopilot backend storage or an external JavaScript host.
+
+If managed Chrome blocks bookmarklets by policy, do not attempt to bypass the policy. Use Option 2 if permitted.
 
 ---
 
-# Start the Snippet
+## Option 2 — Direct source / Chrome DevTools Snippet
+
+Files:
+
+```text
+src/xsup-auditor.js
+```
+
+or the copy-friendly equivalent:
+
+```text
+dist/XSUP_Auditor_JS.txt
+```
+
+The `.txt` file contains the same JavaScript and can be easier to obtain in environments that block direct `.js` downloads.
+
+### First-time Snippet setup
 
 1. Open TACopilot.
 2. Open Chrome DevTools.
-3. Go to **Sources → Snippets**.
-4. Run the saved XSUP Retrospective Auditor snippet.
+3. Select **Sources**.
+4. Open **Snippets**.
+5. Create a new Snippet named `XSUP Auditor`.
+6. Copy the complete contents of `src/xsup-auditor.js` or `dist/XSUP_Auditor_JS.txt`.
+7. Paste into the Snippet.
+8. Save it.
+9. Run it while TACopilot is open.
 
-If the browser page is refreshed, the injected Auditor UI disappears.
+### Existing Snippet
 
-Run the Snippet again.
+1. Open TACopilot.
+2. Open DevTools → **Sources → Snippets**.
+3. Select **XSUP Auditor**.
+4. Run it.
 
----
-
-# Run XSUPs
-
-Paste one or more XSUP IDs.
-
-Click:
-
-**Run Audit(s)**
-
-Duplicate IDs are removed.
-
-Maximum Audit concurrency:
-
-**2**
-
-Maximum Knowledge concurrency:
-
-**1**
-
-Queued work starts automatically.
+If the TACopilot page is refreshed, the injected UI disappears. Run the bookmark or Snippet again.
 
 ---
 
-# Select the product
+# 2. Main controls
 
-Default:
+At the top of the tool you will see an input field and two primary actions.
 
-**Auto detect**
+## Run XSUP Retrospective
 
-The Auditor uses structured case/TACO evidence to determine:
+Use when the goal is to review product-specific Support-owned retrospective fields.
+
+Input: XSUP IDs.
+
+Example:
+
+```text
+XSUP-72446
+XSUP-81234
+```
+
+## Generate KCS
+
+Use when the goal is to create a KCS directly from a completed/usable technical case without first running the retrospective field-review prompt.
+
+Input can be:
+
+```text
+XSUP-72446
+```
+
+or:
+
+```text
+04005807
+```
+
+Multiple XSUP/SFDC inputs can be supplied using spaces, commas or new lines.
+
+## Stop All
+
+Stops local active/queued Auditor processing. Server-side TACO/Case Chat work already submitted may continue.
+
+## Product selection
+
+Choose:
+
+- **Auto detect**
+- **Ask me for every XSUP/case**
+
+If product detection is low-confidence/conflicting, only that case pauses while other jobs continue.
+
+## Choose Folder
+
+Optional. Select an approved writable local or desktop-synced destination when the browser supports the File System Access API.
+
+---
+
+# 3. Run XSUP Retrospective
+
+The retrospective workflow is:
+
+```text
+XSUP
+ ↓
+Resolve SFDC
+ ↓
+Original evidence
+ ↓
+Product detection/confirmation
+ ↓
+TACO freshness decision
+ ↓
+Retrospective Audit
+ ↓
+Support-owned field decisions
+ ↓
+Knowledge action classification
+ ↓
+Knowledge generation if appropriate
+```
+
+## What the Audit reviews
+
+Applicable fields depend on product policy.
+
+For each applicable field, the Audit should provide:
+
+- Current Value
+- Correct / INCORRECT / UNDETERMINED
+- Change Required
+- Recommended Value
+- Detailed Explanation
+- Supporting Evidence
+- exact Support Action
+
+The workflow does not perform broad TAC performance scoring by default.
+
+---
+
+# 4. How Knowledge type is chosen during an XSUP retrospective
+
+After the field decision, the Retrospective Audit prompt performs an explicit **Knowledge Decision**.
+
+It chooses one primary action and can also suggest a secondary action.
+
+| Action | Selection rule in the prompt | Artifact |
+|---|---|---|
+| **CREATE KCS** | A repeatable Support-resolution pattern exists: symptom/error → check → confirm → fix/workaround → verify | KCS Draft |
+| **UPDATE EXISTING KCS** | Relevant KCS already exists but materially lacks the required resolution content | KCS Update Proposal |
+| **UPDATE ADMIN/TECH GUIDE** | Official behavior/configuration/expectation needs clearer administrator/customer documentation | Admin/Tech Guide Update Proposal |
+| **CREATE/UPDATE RUNBOOK** | Reusable value is an internal investigation/evidence procedure rather than a complete resolution article | Runbook Draft |
+| **KNOWN ISSUE/RELEASE NOTE** | Version-specific defect/limitation belongs in known-issue or release communication | Known Issue / Release Note Draft |
+| **NO KNOWLEDGE ACTION** | No material reusable gap | No artifact |
+| **UNDETERMINED** | Evidence is not sufficient to choose safely | No automatic artifact |
+
+The Audit also reports:
+
+- Existing Knowledge Coverage
+- Knowledge Decision Explanation
+- Knowledge Evidence
+- Validation Boundary
+- initial Artifact Readiness
+- Auto-Generate Knowledge Artifact: YES/NO
+
+The JavaScript does not independently guess the artifact using simple keywords. It parses the Case Chat decision and maps it to the correct artifact template and quality checks.
+
+---
+
+# 5. Generate KCS — direct mode
+
+Direct KCS mode is intentionally simpler.
+
+When you click **Generate KCS**, the tool assumes the requested Knowledge type is a KCS.
+
+It sets:
+
+```text
+Primary Knowledge Action: CREATE KCS
+Artifact Type: KCS Draft
+```
+
+It does **not** ask the retrospective prompt to choose Admin Guide vs KCS vs Runbook vs Known Issue.
+
+## Direct KCS flow
+
+```text
+XSUP or SFDC
+ ↓
+Resolve case context
+ ↓
+Detect / confirm product
+ ↓
+Check current TACO
+ ↓
+Reuse / wait / refresh TACO when required
+ ↓
+Collect original Jira/SFDC evidence
+ ↓
+Generate KCS Draft
+ ↓
+Independent Quality Review
+ ↓
+Automatic Code Checks
+ ↓
+Optional One-time Repair
+ ↓
+READY / DRAFTABLE / NOT READY
+```
+
+The retrospective Support-owned field review is shown as intentionally skipped/not applicable.
+
+### SFDC-only input
+
+An XSUP is not required for direct KCS mode.
+
+If the input is an 8-digit SFDC case, the tool starts from that case and can retain a linked XSUP in provenance if one is found in the case context.
+
+---
+
+# 6. Product selection
+
+Supported profiles:
 
 - XDR/XSIAM
 - XSOAR
 - Cortex Cloud
 
-If confidence is low or conflicting, only that XSUP pauses for confirmation.
+The selected product helps frame case context and retrospective policy.
 
-To confirm every XSUP manually, select:
+For retrospective mode, product selection determines the eligibility trigger and applicable Support-owned fields.
 
-**Ask me for every XSUP**
+For direct KCS mode, it does **not** create a retrospective eligibility decision; it scopes the KCS generation/quality context.
 
----
-
-# Select SFDC when required
-
-If one XSUP maps to multiple possible SFDC cases, that XSUP pauses.
-
-Use:
-
-**Choose SFDC**
-
-The tool does not guess.
+If the wrong product is selected for a retrospective, use **Change Product & Re-run Review**. Current TACO can still be reused when source-current.
 
 ---
 
-# TACO behavior
+# 7. TACO freshness
 
-The Auditor checks current Jira/SFDC evidence before deciding whether TACO needs to run.
+Typical decisions:
 
-Typical behavior:
+## REUSE
 
-## Reuse
+A complete usable TACO analysis exists and no newer Jira/SFDC evidence requires refresh.
 
-A usable completed TACO exists and no newer source evidence requires refresh.
+## WAIT
 
-## Wait
+No usable final result is available yet, but an analysis is genuinely running.
 
-No usable final result exists yet, but TACO is genuinely running.
+## START
 
-## Start
+No TACO investigation exists.
 
-No investigation exists.
+## REFRESH
 
-## Refresh
+Used when:
 
-TACO is stale, failed, incomplete or has no usable final result.
+- newer original case evidence exists
+- the existing result is incomplete/failed
+- there is no usable final conclusion
+- the reviewer deliberately uses **Re-analyze All**
 
-Old age alone does not force a refresh.
-
----
-
-# Retrospective Audit
-
-The Audit is product-specific and field-centric.
-
-For each applicable Support-owned field, it should explain:
-
-- Current Value
-- Correct / INCORRECT / UNDETERMINED
-- Change Required
-- Recommended Value if needed
-- Detailed Explanation
-- Important Caveat
-- Supporting Evidence
-- Exact Support Action
-
-The tool does not use the Retrospective as a general TAC performance-scoring exercise.
+Age alone does not force refresh.
 
 ---
 
-# Analysis & Reuse Status
+# 8. Knowledge quality workflow
 
-The selected XSUP has independent status cards for:
+Once Knowledge generation starts, retrospective mode and direct KCS mode use the same quality engine.
+
+```text
+1. Generate enriched draft
+   + preliminary inline markers
+        ↓
+2. Independent quality review
+        ↓
+   if quality request is rejected:
+   one compact quality retry
+        ↓
+3. Deterministic JavaScript checks
+        ↓
+4. One repair pass if safe/appropriate
+        ↓
+5. Deterministic checks again
+        ↓
+READY / DRAFTABLE / NOT READY
+```
+
+Every artifact requires **At a Glance** near the top.
+
+## Inline review markers
+
+- **⚠ SME REVIEW** — product behavior, UI path, timing, configuration or operational detail needs validation
+- **⚙ ENGINEERING REVIEW** — backend/API/architecture/implementation claim needs Engineering confirmation
+- **◇ INFERENCE** — derived but not directly established
+- **🔎 SOURCE CHECK** — needs a stronger/direct source
+- **🧭 SCOPE CHECK** — version/platform/tenant/applicability needs confirmation
+- **ℹ RECOMMENDATION** — guidance/best practice rather than mandatory behavior
+- **✓ CONFIRMED** — important claim directly supported
+- **✕ UNSUPPORTED** — material claim lacks sufficient support
+
+The generator is instructed to add preliminary markers even before the independent quality stage so a usable draft remains reviewable if the quality request itself fails.
+
+---
+
+# 9. Knowledge readiness
+
+## READY
+
+Useful/materially complete; no material unresolved validation item identified by the quality workflow.
+
+## DRAFTABLE
+
+Useful draft; one or more named material review items remain.
+
+## NOT READY
+
+A usable draft exists but a material blocker remains.
+
+The draft is preserved and displays:
+
+```text
+✕ REVIEW REQUIRED
+
+What to review:
+...
+
+Why:
+...
+```
+
+NOT READY is not the same as execution failure.
+
+## Failed Knowledge job
+
+`failed` is reserved for cases where no usable artifact could be generated/preserved.
+
+## Quality review execution error
+
+If independent quality Case Chat is rejected, the tool retries once using a compact quality prompt. If quality still cannot complete but an enriched draft exists, the draft is preserved as **NOT READY** and the internal state is recorded as a quality-review execution error rather than pretending the AI judged the article itself to be a substantive quality FAIL. The diagnostic internal status is `QUALITY_REVIEW_ERROR`.
+
+---
+
+# 10. Analysis & Reuse Status
+
+Retrospective mode can show:
 
 - TACO Analysis
 - Retrospective Audit
 - Knowledge Artifact
 
-This tells you exactly what was reused and what was newly generated.
+Direct KCS mode shows:
+
+- TACO Analysis
+- Direct KCS / Knowledge
+- retrospective field review intentionally skipped
+
+Use the status cards to understand whether each result was reused or newly generated.
 
 ---
 
-# Regenerate Audit
+# 11. Regeneration controls
 
-Use when you want a fresh retrospective but current TACO/evidence is sufficient.
+## Regenerate Audit
 
-It does not rerun TACO.
+Uses current TACO/evidence and generates a fresh retrospective only.
 
-It does not automatically regenerate Knowledge.
+Prior Knowledge is marked outdated when it depended on the old Audit. It is not automatically regenerated.
 
----
+## Regenerate KCS / Regenerate Knowledge
 
-# Regenerate KCS / Regenerate Knowledge
+Runs the Knowledge pipeline again without unnecessarily rerunning TACO or the retrospective.
 
-Use when you want only the Knowledge artifact rebuilt.
+In direct KCS mode, **Regenerate KCS** uses the current TACO/evidence and creates a fresh direct KCS pipeline result.
 
-This runs the current:
+## Re-analyze All
 
-```text
-Knowledge Enrichment
- ↓
-Independent Quality Review
- ↓
-Provenance Resolution
- ↓
-Automatic Repair if required
- ↓
-Deterministic Gate
-```
+Forces fresh TACO and rebuilds downstream required work.
+
+Use only when a genuinely fresh end-to-end analysis is intended.
 
 ---
 
-# Re-analyze All
+# 12. Smart Reuse
 
-Use when you intentionally want:
+Reuse is source-driven.
 
-```text
-Fresh TACO
- ↓
-Fresh Audit
- ↓
-Fresh Knowledge
-```
+A compatible current result may be reused when its source boundary still matches.
+
+A product/source change invalidates incompatible derived results.
+
+Direct KCS includes its workflow mode in Knowledge reuse identity so it does not accidentally reuse a different artifact intent.
 
 ---
 
-# Knowledge Quality statuses
+# 13. Concurrency
 
-## READY
+- up to **2** case/audit workers
+- **1** Knowledge worker
 
-Useful/materially complete and no material validation item remains.
-
-## DRAFTABLE
-
-Useful, but named human validation items remain.
-
-## NOT READY
-
-Blocked because the artifact is too incomplete, unsupported or unsafe.
+Knowledge generation can continue while the case/audit queue advances.
 
 ---
 
-# What happens during Knowledge generation?
+# 14. Reports and downloads
 
-## 1. Enrichment
+Outputs can include:
 
-The draft is generalized for future reuse.
+- Retrospective Audit HTML
+- Review Paste Comment text
+- KCS Draft HTML
+- KCS Update Proposal
+- Admin/Tech Guide Update Proposal
+- Runbook Draft
+- Known Issue / Release Note Draft
 
-## 2. Independent quality review
+Direct KCS does not create a retrospective report just for the internal case basis.
 
-A separate AI reviewer checks:
-
-- accuracy
-- usefulness
-- completeness
-- actionability
-- technical depth
-- sources
-- generalization
-- consistency
-- readability
-- discoverability
-- verification
-- audience fit
-
-## 3. Provenance resolution
-
-Internal analysis markers such as:
-
-```text
-[inference]
-[from case data]
-[derived analysis]
-```
-
-must not appear in final Knowledge.
-
-The AI must prove/rewrite, validate, or remove those claims safely.
-
-## 4. Deterministic gate
-
-JavaScript inspects the final text independently.
-
-## 5. Repair pass
-
-If a repairable generic defect remains, one automatic repair pass is allowed.
-
-The result is checked again.
+A usable **NOT READY** Knowledge draft remains visible/downloadable for review; it is clearly marked as blocked for publication.
 
 ---
 
-# Why DRAFTABLE is not a failure
+# 15. Human review
 
-DRAFTABLE means:
+The tool does not:
 
-> This is useful Knowledge, but one or more material details still need human confirmation.
+- automatically change Jira/SFDC
+- automatically post the Review Paste Comment
+- automatically publish Knowledge
+- replace TAC/SME/Engineering/documentation-owner judgment
 
-For example:
-
-```text
-Core product behavior is supported.
-Exact console path and API request schema still need documentation-owner validation.
-```
-
-That can be a useful DRAFTABLE article.
-
----
-
-# Downloads
-
-Default:
-
-**Browser Downloads**
-
-Optional:
-
-**Choose Folder**
-
-The selected folder can be an approved local or desktop-synced location.
-
----
-
-# Save / Restore Session
-
-## Save Session
-
-Downloads current local Auditor state as JSON.
-
-## Restore Session
-
-After rerunning the Snippet:
-
-1. click Restore Session
-2. select the saved JSON
-
-Active jobs restore as stopped.
-
-Completed data is preserved.
-
----
-
-# Stop All
-
-Stops local Auditor processing and queues.
-
-Server-side TACO/Case Chat requests already submitted may continue.
-
----
-
-# Before making a ticket change
-
-Verify:
-
-1. correct XSUP/SFDC
-2. correct product
-3. current TACO
-4. strongest original evidence
-5. field decision
-6. important caveats
-7. exact Support action
-
----
-
-# Before publishing Knowledge
-
-Verify:
-
-1. Validated Readiness
-2. Quality Summary
-3. Validation Items
-4. Source References
-5. exact commands/APIs/UI paths/version/timings when present
-6. generalization/privacy
-7. intended documentation destination
-
-Even READY means:
-
-**ready for human review**, not automatically approved/published.
+A qualified reviewer remains responsible for final action and publication.

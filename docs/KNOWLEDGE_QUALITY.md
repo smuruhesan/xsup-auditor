@@ -1,8 +1,13 @@
 # Knowledge Quality
 
+This document applies to both **retrospective-generated Knowledge** and **direct Generate KCS** mode.
+
 The XSUP Auditor does not generate a Knowledge article with one AI prompt and trust the result.
 
-It uses a **multi-step quality workflow** built on the completed retrospective, TACO Analysis, original Jira/SFDC evidence, and Case Chat. The goal is simple:
+It uses a **multi-step quality workflow** built on TACO Analysis, original Jira/SFDC evidence, Case Chat, and either:
+
+- a completed Retrospective Audit, or
+- a direct KCS case basis when the reviewer explicitly clicks **Generate KCS**. The goal is simple:
 
 > **Generate a useful draft quickly, make uncertainty visible, and keep the final publication decision with the engineer/reviewer.**
 
@@ -26,10 +31,10 @@ It does **not** automatically publish Knowledge or modify documentation.
 
 # How the Knowledge quality workflow works
 
-The Knowledge workflow follows the same sequence every time. A fresh Knowledge artifact normally uses **two AI prompts**, with one additional repair prompt only when a safe, repairable issue is found.
+The Knowledge workflow follows the same sequence every time. A fresh Knowledge artifact normally uses **two AI prompts**. One compact quality-retry prompt may be added when the normal quality request is rejected, and one repair prompt may be added when a safe, repairable issue is found.
 
 ```text
-XSUP Retrospective + TACO + Original Evidence
+Retrospective basis OR Direct KCS basis + TACO + Original Evidence
                     │
                     ▼
         1. Generate Knowledge Draft
@@ -79,12 +84,72 @@ XSUP Retrospective + TACO + Original Evidence
 
 | Situation | Knowledge prompts used |
 |---|---:|
-| Fresh Knowledge generation, no repair needed | **2** |
-| Fresh Knowledge generation with one repair pass | **3** |
-| Current enriched draft reused | **1** quality-review prompt, plus optional repair |
+| Fresh Knowledge generation, normal path | **2** |
+| Quality request rejected and compact retry succeeds | **+1** quality call |
+| One repair pass is required | **+1** repair call |
+| Fresh run with both compact quality retry and repair | **4 total** |
+| Current enriched draft reused | **1** quality-review prompt, plus exceptional compact retry and/or optional repair when needed |
 | Current final quality-reviewed artifact reused | **0** new Knowledge prompts |
 
 The **Retrospective Audit prompt happens earlier** and is separate from this Knowledge-generation flow.
+
+In **direct Generate KCS mode**, the retrospective prompt is intentionally skipped, so a fresh direct KCS normally uses only the Knowledge prompts shown above.
+
+# Before Step 1 — How the artifact type is chosen
+
+There are two different entry paths.
+
+## Retrospective mode — the Audit classifies the Knowledge action
+
+During **Run XSUP Retrospective**, the Retrospective Audit prompt contains an explicit Knowledge Decision rubric.
+
+After completing the product-specific Support-owned field decision, Case Chat is asked to choose one primary reusable Knowledge action:
+
+| Knowledge action | Prompt selection rule | Artifact produced |
+|---|---|---|
+| `CREATE KCS` | Repeatable Support-resolution pattern: symptom/error → check → confirm → fix/workaround → verify | KCS Draft |
+| `UPDATE EXISTING KCS` | A relevant KCS exists but materially lacks required resolution content | KCS Update Proposal |
+| `UPDATE ADMIN/TECH GUIDE` | Official behavior/configuration/expectation should be clearer for administrators/customers | Admin / Tech Guide Update Proposal |
+| `CREATE/UPDATE RUNBOOK` | Reusable value is mainly an internal investigation/evidence workflow rather than complete resolution content | Runbook Draft |
+| `KNOWN ISSUE/RELEASE NOTE` | Version-specific defect/limitation belongs in known-issue/release communication | Known Issue / Release Note Draft |
+| `NO KNOWLEDGE ACTION` | No material reusable gap | No artifact |
+| `UNDETERMINED` | Evidence is insufficient to choose safely | No automatic artifact |
+
+The Audit also returns:
+
+- optional Secondary Knowledge Action;
+- initial Artifact Readiness;
+- Existing Knowledge Coverage;
+- Knowledge Decision Explanation;
+- Knowledge Evidence;
+- Validation Boundary;
+- Auto-Generate Knowledge Artifact: YES/NO.
+
+This is an AI/Case Chat decision constrained by the explicit prompt rubric and evidence boundary. JavaScript then parses the selected action and deterministically maps it to the corresponding artifact template/quality rubric.
+
+It is **not** a simple keyword classifier.
+
+## Direct Generate KCS mode — no artifact-type classification
+
+When the reviewer clicks **Generate KCS**, the intent is explicit.
+
+The tool sets:
+
+```text
+Primary Knowledge Action = CREATE KCS
+Artifact Type = KCS Draft
+```
+
+and does not run the retrospective field-review/Knowledge-classification prompt.
+
+Direct KCS can start from either:
+
+- an XSUP ID; or
+- an 8-digit SFDC case number.
+
+It still performs product/context resolution, TACO freshness handling, original evidence collection, Knowledge generation and the full quality workflow.
+
+---
 
 # Step 1 — Generate a reusable Knowledge draft
 
@@ -108,6 +173,25 @@ The generator looks for:
 
 Customer-specific details are removed unless they are needed as a technical example.
 
+## Preliminary review markers are required during generation
+
+The generation prompt itself is instructed to mark high-risk technical claims before the independent quality stage.
+
+Examples include exact:
+
+- commands;
+- API endpoints/schemas;
+- UI navigation paths;
+- timing values;
+- versions/platform scope;
+- backend/architecture behavior;
+- configuration values;
+- operational remediation behavior.
+
+If a claim is not directly established by an appropriate underlying source, the generated draft should already use a visible review marker such as **SME REVIEW**, **ENGINEERING REVIEW**, **INFERENCE**, **SOURCE CHECK**, **SCOPE CHECK** or **UNSUPPORTED**.
+
+This provides a safer fallback if the independent quality-review request itself later fails.
+
 ## At a Glance
 
 Every generated artifact starts with a short **At a Glance** section.
@@ -130,6 +214,12 @@ This makes the article understandable before the reviewer reads the full technic
 # Step 2 — Independent AI quality review
 
 A second, separate prompt reviews the generated draft.
+
+### Compact quality retry
+
+If the normal quality-review Case Chat request is rejected by the service (for example a request-size/service `422`), the Auditor performs **one compact quality retry**. The retry keeps the full generated draft and a compact evidence/context boundary instead of resending unnecessary large context.
+
+If that retry also cannot complete but a usable enriched draft exists, the draft is preserved as **NOT READY** for human review instead of being discarded. The internal execution state records a quality-review execution error rather than pretending that the AI completed a substantive quality FAIL.
 
 This is important because the same AI response that generated the article is **not allowed to be the only quality decision**.
 
@@ -548,6 +638,7 @@ The independent quality prompt also produces an internal result:
 PASS
 PASS_WITH_VALIDATION
 FAIL
+QUALITY_REVIEW_ERROR
 ```
 
 These are useful for diagnostics, but they are **not the main status engineers should use**.
@@ -566,7 +657,8 @@ Typical relationship:
 |---|---|
 | `PASS` | READY, unless deterministic checks find an issue |
 | `PASS_WITH_VALIDATION` | DRAFTABLE |
-| `FAIL` | NOT READY when a usable draft exists |
+| `FAIL` | NOT READY when the quality reviewer substantively rejects a usable draft |
+| `QUALITY_REVIEW_ERROR` | NOT READY when quality execution could not complete but a usable draft is preserved |
 
 The deterministic gate can always make the final readiness more conservative.
 
@@ -603,11 +695,13 @@ This helps reduce:
 - unnecessary load;
 - differences caused only by asking the same question again.
 
+Direct-KCS and retrospective-derived Knowledge include their workflow intent in reuse identity so an incompatible artifact is not silently reused across modes.
+
 If a reviewer deliberately wants the current case rebuilt using the latest Knowledge workflow, use:
 
 **Regenerate KCS / Regenerate Knowledge**
 
-This regenerates Knowledge using the current TACO and completed Audit without requiring a full TACO re-analysis.
+In retrospective mode, this regenerates Knowledge using the current TACO and completed Audit without requiring a full TACO re-analysis. In direct KCS mode, it regenerates the KCS from the current TACO/original-evidence case basis without creating a retrospective field review.
 
 ---
 

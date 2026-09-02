@@ -1,5 +1,5 @@
 /*
-XSUP Retrospective Auditor v1
+XSUP Auditor & KCS Generator v1
 Supported product profiles
 - XDR/XSIAM
 - XSOAR
@@ -11,7 +11,8 @@ Runtime model
 - Automatically detects the product from structured case/TACO metadata when possible.
 - Low-confidence/ambiguous product detection pauses only that XSUP for reviewer selection.
 - Product can be manually changed; a product change invalidates Audit/Knowledge reuse but does not force TACO refresh.
-- Two XSUP audit workers + one independent knowledge-artifact worker.
+- Two retrospective audit workers + one independent knowledge-artifact worker.
+- Supports direct KCS generation from either an XSUP ID or an SFDC case number without running the retrospective field-review prompt.
 - Automatic TACO freshness: reuse current analysis, wait for a running analysis, or refresh only when current evidence requires it.
 - Audit and knowledge Case Chat results are fingerprinted and reused only when their current inputs still match.
 - Fresh knowledge uses enrichment -> independent quality review -> deterministic safety gate, with one evidence-bounded repair pass for generic output/provenance defects.
@@ -809,13 +810,67 @@ CORTEX CLOUD RETROSPECTIVE POLICY
     return "—";
   }
 
-  function knowledgeReviewCount(job) {
-    const stats = reviewMarkerStats(job?.knowledgeAnswer || "");
-    if (stats.material.length) return stats.material.length;
+  function artifactValidationItems(artifact) {
+    const section = extractKnowledgeSection(
+      artifact,
+      ["TAC/SME Validation Items", "Validation Items"]
+    );
+    if (!section) return [];
+
+    const normalized = cleanText(section);
+    if (!normalized || /^(none|none identified|not applicable|n\/a|no additional validation items(?: identified)?)[.!]?$/i.test(normalized)) {
+      return [];
+    }
+
+    const lines = String(section)
+      .split(/\r?\n/)
+      .map(line => cleanText(
+        line
+          .replace(/^\s*(?:[-*+]|\d+[.)])\s*/, "")
+          .replace(reviewMarkerPattern(), "")
+      ))
+      .filter(Boolean)
+      .filter(line => !/^(none|none identified|not applicable|n\/a)$/i.test(line));
+
+    if (lines.length > 1) return lines;
+
+    return normalized
+      .split(/\s*;\s*/)
+      .map(cleanText)
+      .filter(Boolean);
+  }
+
+  function qualityValidationItems(job) {
     const validation = cleanText(job?.knowledgeQualityValidationItems || "");
-    if (!validation || /^(none|none identified|n\/a|not applicable)$/i.test(validation)) return 0;
-    const pieces = validation.split(/(?:\r?\n|\s*;\s*|\s+·\s+|\s+-\s+)/).map(cleanText).filter(Boolean);
-    return Math.max(1, pieces.length);
+    if (!validation || /^(none|none identified|n\/a|not applicable)$/i.test(validation)) return [];
+    return validation
+      .split(/(?:\r?\n|\s*;\s*|\s+·\s+)/)
+      .map(cleanText)
+      .filter(Boolean);
+  }
+
+  function knowledgeReviewCount(job) {
+    if (!job) return 0;
+    const stats = reviewMarkerStats(job.knowledgeAnswer || "");
+    const articleItems = artifactValidationItems(job.knowledgeAnswer || "");
+    const qualityItems = qualityValidationItems(job);
+    const blocking = knowledgeBlockingReviewItems(job);
+
+    // Inline material markers are the preferred representation. Article/quality
+    // validation lists frequently repeat those same concerns, so only use the
+    // lists as the primary count when the article has no material inline markers.
+    let count = stats.material.length;
+    if (!count) {
+      count = Math.max(articleItems.length, qualityItems.length);
+    }
+
+    // A quality-execution/finalization blocker is distinct from content-level
+    // validation. Count it once unless an UNSUPPORTED blocker is already visible.
+    if (blocking.length && !stats.blockers.length) {
+      count += blocking.length;
+    }
+
+    return count;
   }
 
   function readinessChipHtml(jobOrValue) {
@@ -835,7 +890,31 @@ CORTEX CLOUD RETROSPECTIVE POLICY
       return token;
     });
 
+    // Render the mandatory At a Glance section as a compact visual summary
+    // rather than another large article heading.
+    let atAGlanceHtml = "";
+    text = text.replace(
+      /(?:^|\n)##\s+At a Glance\s*\n([\s\S]*?)(?=\n##\s+|$)/i,
+      (_, body) => {
+        const summaryBody = safeMarkdownToHtml(String(body || "").trim());
+        atAGlanceHtml = `
+          <aside class="xa-at-a-glance" aria-label="At a glance">
+            <div class="xa-at-a-glance-title">ℹ At a glance</div>
+            <div class="xa-at-a-glance-body">${summaryBody}</div>
+          </aside>
+        `;
+        return "\n@@XA_AT_A_GLANCE_BLOCK@@\n";
+      }
+    );
+
     let html = safeMarkdownToHtml(text);
+
+    if (atAGlanceHtml) {
+      html = html
+        .replace(/<p>\s*@@XA_AT_A_GLANCE_BLOCK@@\s*<\/p>/i, atAGlanceHtml)
+        .replace(/@@XA_AT_A_GLANCE_BLOCK@@/g, atAGlanceHtml);
+    }
+
     for (const item of markers) {
       html = html.split(item.token).join(reviewMarkerChipHtml(item.marker));
     }
@@ -851,12 +930,99 @@ CORTEX CLOUD RETROSPECTIVE POLICY
     });
   }
 
+  function knowledgeIssueWhy(issue) {
+    const s = cleanText(issue || "");
+    if (!s) return "The quality review could not establish this item safely.";
+
+    if (/Source References/i.test(s)) {
+      return "The underlying source support is incomplete or not direct enough to treat the affected guidance as publication-ready.";
+    }
+    if (/missing required section/i.test(s)) {
+      return "A required part of the reusable article is missing, so the draft may be incomplete for another engineer.";
+    }
+    if (/unsupported review marker/i.test(s)) {
+      return "At least one material statement is still explicitly marked unsupported and must be sourced, rewritten, or removed.";
+    }
+    if (/raw internal provenance|internal provenance/i.test(s)) {
+      return "Internal reasoning/provenance syntax must not appear in a user-facing knowledge artifact.";
+    }
+    if (/raw source\/provenance markup|verification-warning|<ref/i.test(s)) {
+      return "Internal source markup must be converted into clean human-readable references and any verification requirement must remain visible.";
+    }
+    if (/internal reuse metadata/i.test(s)) {
+      return "Internal tool metadata must never be exposed in the article. The generator should remove it automatically before review.";
+    }
+    if (/placeholder|token/i.test(s)) {
+      return "Unresolved machine/editorial placeholder text can make the article misleading or unusable.";
+    }
+    if (/code fence/i.test(s)) {
+      return "Malformed code formatting can change commands or make procedural instructions unsafe to copy.";
+    }
+    if (/artifact targets/i.test(s)) {
+      return "The generated draft appears to reference a different source target and must be checked before reuse.";
+    }
+    if (/At a Glance/i.test(s)) {
+      return "The summary should let an engineer understand the topic, key finding, and purpose before reading the full article.";
+    }
+    if (/quality finalization|QUALITY_REVIEW_ERROR|Case Chat task rejected|Service error \(422\)/i.test(s)) {
+      return "The draft exists, but the independent quality-review service did not complete successfully. Content-level validation must remain visible until the quality review completes.";
+    }
+    return "The independent quality/deterministic review found this item could not yet be treated as publication-ready.";
+  }
+
+  function knowledgeBlockingReviewItems(job) {
+    if (!job) return [];
+    const readiness = normalizeDecision(job.validatedArtifactReadiness || job.artifactReadiness);
+    if (readiness !== "NOT READY") return [];
+
+    const raw = [
+      ...(Array.isArray(job.knowledgeQualityIssues) ? job.knowledgeQualityIssues : []),
+      ...(Array.isArray(job.knowledgeDraftReviewIssues) ? job.knowledgeDraftReviewIssues : [])
+    ].map(cleanText).filter(Boolean);
+
+    if (!raw.length && job.knowledgeQualitySummary) raw.push(cleanText(job.knowledgeQualitySummary));
+    if (!raw.length && job.knowledgeError) raw.push(cleanText(job.knowledgeError));
+    if (!raw.length) raw.push("This draft requires human review before publication.");
+
+    const seen = new Set();
+    return raw.filter(item => {
+      const key = item.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function knowledgeBlockingReviewHtml(job) {
+    const items = knowledgeBlockingReviewItems(job);
+    if (!items.length) return "";
+
+    return `
+      <div class="xa-publication-blocker" role="alert">
+        <div class="xa-publication-blocker-title">
+          <span class="xa-semantic-chip xa-semantic-red">✕ REVIEW REQUIRED</span>
+          <strong>Draft generated successfully — not ready for publication</strong>
+        </div>
+        <p>The generator completed the draft instead of discarding it. Review the items below before publishing or treating the content as final.</p>
+        <ul>
+          ${items.map(issue => `
+            <li>
+              <strong>What to review:</strong> ${escapeHtml(issue)}
+              <br><strong>Why:</strong> ${escapeHtml(knowledgeIssueWhy(issue))}
+            </li>
+          `).join("")}
+        </ul>
+      </div>
+    `;
+  }
+
   function knowledgeReviewFooterHtml(job) {
     if (!job) return "";
     const stats = reviewMarkerStats(job.knowledgeAnswer || "");
     const material = stats.material;
     const validation = cleanText(job.knowledgeQualityValidationItems || "");
     const hasValidation = Boolean(validation && !/^(none|none identified|n\/a|not applicable)$/i.test(validation));
+    const articleValidation = artifactValidationItems(job.knowledgeAnswer || "");
     const count = knowledgeReviewCount(job);
 
     const markerRows = material.map((m, i) => `
@@ -866,11 +1032,16 @@ CORTEX CLOUD RETROSPECTIVE POLICY
       </li>
     `).join("");
 
-    const reviewDetails = (markerRows || hasValidation) ? `
+    const articleValidationHtml = (!markerRows && articleValidation.length)
+      ? `<div class="xa-review-validation-summary"><strong>Article validation items</strong><ol class="xa-review-item-list">${articleValidation.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ol></div>`
+      : "";
+
+    const reviewDetails = (markerRows || hasValidation || articleValidationHtml) ? `
       <details class="xa-review-details">
         <summary>Review &amp; Validation Items${count ? ` (${count})` : ""}</summary>
         <div class="xa-review-details-body">
           ${markerRows ? `<ol class="xa-review-item-list">${markerRows}</ol>` : ""}
+          ${articleValidationHtml}
           ${hasValidation ? `<div class="xa-review-validation-summary"><strong>Quality-review validation summary</strong><p>${escapeHtml(validation)}</p></div>` : ""}
         </div>
       </details>
@@ -1626,9 +1797,21 @@ CORTEX CLOUD RETROSPECTIVE POLICY
       .map(a => a.href || a.getAttribute("href") || "")
       .filter(Boolean);
 
+    const requestedXsup = /^XSUP-\d+$/i.test(String(xsup || "")) ? String(xsup).toUpperCase() : "";
+    const hrefLinkedXsup = (
+      hrefs.map(h => String(h).match(/\bXSUP-\d+\b/i)?.[0]).find(Boolean) || ""
+    ).toUpperCase();
+    const textLinkedXsup = (
+      `${summaryText}\n${els.map(el => el.innerText || "").join("\n")}`.match(/\bXSUP-\d+\b/i)?.[0] || ""
+    ).toUpperCase();
+    const linkedXsup = requestedXsup || hrefLinkedXsup || textLinkedXsup;
+
     const jiraHref =
-      hrefs.find(h => /jira-dc\.paloaltonetworks\.com\/browse\/XSUP-\d+/i.test(h) && h.toUpperCase().includes(xsup || "XSUP-")) ||
-      (xsup ? `https://jira-dc.paloaltonetworks.com/browse/${xsup}` : "");
+      hrefs.find(h =>
+        /jira-dc\.paloaltonetworks\.com\/browse\/XSUP-\d+/i.test(h) &&
+        (!linkedXsup || h.toUpperCase().includes(linkedXsup))
+      ) ||
+      (linkedXsup ? `https://jira-dc.paloaltonetworks.com/browse/${linkedXsup}` : "");
 
     const sfdcHref =
       hrefs.find(h => /lightning\.force\.com\/lightning\/r\/Case\/500[a-zA-Z0-9]{12,15}\/view/i.test(h)) ||
@@ -1659,6 +1842,7 @@ CORTEX CLOUD RETROSPECTIVE POLICY
 
     return {
       case_number: caseNumber,
+      linked_xsup: linkedXsup || "",
       counts,
       records,
       jira_comments: records.filter(x => x.type === "JIRA_COMMENT"),
@@ -2186,11 +2370,14 @@ KNOWN ISSUE / RELEASE NOTE QUALITY
   function buildKnowledgePrompt(job) {
     const type = knowledgeArtifactType(job);
     const label = knowledgeArtifactLabel(type);
+    const sourceLabel = knowledgeSourceLabel(job);
+    const direct = isDirectKcsJob(job);
 
     const common = `
 KNOWLEDGE ENRICHMENT + DRAFT GENERATION
 
-Target XSUP: ${job.xsup}
+Source Case: ${sourceLabel}
+Linked XSUP: ${realXsupForJob(job) || "Not identified / not required"}
 SFDC: ${job.caseNumber}
 Product: ${productLabel(job)}
 Requested Artifact: ${label}
@@ -2199,9 +2386,11 @@ Initial Artifact Readiness: ${job.artifactReadiness || "NOT APPLICABLE"}
 
 PURPOSE
 Create a high-quality reusable DRAFT for later human review.
-Do not merely restate the retrospective.
+${direct
+  ? "This is direct KCS mode. Use the supplied case basis and evidence; do not perform or invent a retrospective Support-owned field review."
+  : "Do not merely restate the retrospective."}
 
-STARTING CASE BASIS
+${direct ? "DIRECT KCS CASE BASIS" : "STARTING RETROSPECTIVE CASE BASIS"}
 ${job.auditAnswer}
 
 KNOWLEDGE ENRICHMENT
@@ -2223,6 +2412,19 @@ IMPORTANT SOURCE RULES
 - Prefer directly relevant, authoritative sources. Do not add loosely related references just to make the article look comprehensive.
 - If existing knowledge already substantially covers the issue, say so and prefer an update proposal rather than duplicate content where the requested artifact type permits it.
 
+AT-A-GLANCE SUMMARY — MANDATORY
+- Every generated Knowledge artifact must contain a section named exactly: ## At a Glance
+- Place it immediately after the title/draft metadata and before the detailed artifact sections.
+- Write 2–3 concise sentences, normally about 35–85 words total.
+- It must answer, in plain language:
+  1. What problem/topic is this artifact about?
+  2. What is the key technical finding/behavior?
+  3. What will this artifact help the reader understand, troubleshoot, configure, or resolve?
+- Make it understandable to an engineer who has not read the originating XSUP.
+- Do not put XSUP/SFDC IDs, source lists, quality-review details, validation-item lists, or internal process commentary in At a Glance.
+- Do not introduce any fact in At a Glance that is not supported by the artifact body/evidence.
+- Keep the summary reusable across customers.
+
 GENERALIZATION + SAFETY
 - Generalize the reusable technical pattern across customers.
 - Do not expose customer-specific names, tenant IDs, hostnames or confidential one-off data unless absolutely necessary as a labeled example.
@@ -2232,6 +2434,32 @@ GENERALIZATION + SAFETY
 - Do not include internal reuse metadata such as ${REUSE_META_PREFIX}.
 - Do not include unresolved placeholders.
 - This is a draft/proposal. Do not say it is approved or already published.
+
+PRELIMINARY INLINE REVIEW MARKERS — REQUIRED DURING GENERATION
+Do not wait for the later quality-review prompt to identify every uncertainty.
+When the draft contains a material technical detail that is not directly established by an authoritative underlying source in the supplied context, place one of these markers immediately after the affected statement:
+- [[SME_REVIEW|reason]] — product behavior, UI path, timing, configuration, or operational detail needs product/SME validation.
+- [[ENGINEERING_REVIEW|reason]] — backend, API, architecture, or implementation detail needs Engineering confirmation.
+- [[INFERENCE|reason]] — conclusion is derived but not directly established.
+- [[SOURCE_CHECK|reason]] — exact command, path, dataset, documentation claim, or factual detail needs a stronger/direct underlying source.
+- [[SCOPE_CHECK|reason]] — version, OS, platform, tenant, timing, or applicability scope needs confirmation.
+- [[RECOMMENDATION|reason]] — best-practice guidance rather than mandatory product behavior.
+- [[CONFIRMED|source cue]] — use sparingly only when a material claim is directly established by an appropriate underlying source.
+- [[UNSUPPORTED|reason]] — material claim cannot safely remain as written from the supplied evidence.
+
+Specific high-risk details that MUST be sourced or marked include:
+- exact commands or XQL queries,
+- exact API routes/payloads,
+- exact UI navigation,
+- file/log/configuration paths,
+- product/agent versions,
+- exact timing or propagation windows,
+- backend architecture/internal implementation behavior,
+- limits/counts/nesting levels,
+- remediation behavior and operational guarantees.
+
+Every material item listed later under Validation Items must also have an inline marker beside the specific statement it affects when possible.
+Do not hide uncertainty by writing an unsupported detail as a confident fact.
 
 ${knowledgeQualityRubric(type)}
 `;
@@ -2244,8 +2472,11 @@ Return the draft in this structure:
 # [Searchable symptom/error-first title]
 
 **Draft Status:** DRAFT — REVIEW REQUIRED BEFORE PUBLICATION
-**Generated From:** ${job.xsup}
+**Generated From:** ${sourceLabel}
 **Knowledge Type:** KCS
+
+## At a Glance
+[2–3 sentence plain-language summary of the problem/topic, key finding, and what this article helps the reader do]
 
 ## Symptoms / Error
 [observable symptoms/errors/status]
@@ -2302,7 +2533,10 @@ Return the draft in this structure:
 # Existing KCS Update Proposal
 
 **Draft Status:** DRAFT — REVIEW REQUIRED
-**Generated From:** ${job.xsup}
+**Generated From:** ${sourceLabel}
+
+## At a Glance
+[2–3 sentence plain-language summary of the knowledge gap/update, key finding, and what the proposed update helps the reader do]
 
 ## Existing Knowledge Reference
 [existing KCS title/ID/link if actually identified]
@@ -2341,7 +2575,10 @@ Return the draft in this structure:
 # Admin / Tech Guide Update Proposal
 
 **Draft Status:** DRAFT — DOCUMENTATION OWNER REVIEW REQUIRED
-**Generated From:** ${job.xsup}
+**Generated From:** ${sourceLabel}
+
+## At a Glance
+[2–3 sentence plain-language summary of the documentation topic/gap, key technical finding, and what the proposed guidance helps the reader understand or do]
 
 ## Target Documentation
 [existing page/guide if actually identified; otherwise recommended documentation area]
@@ -2386,7 +2623,10 @@ Return the draft in this structure:
 # TAC Runbook Draft
 
 **Draft Status:** DRAFT — TAC/SME REVIEW REQUIRED
-**Generated From:** ${job.xsup}
+**Generated From:** ${sourceLabel}
+
+## At a Glance
+[2–3 sentence plain-language summary of when this runbook is useful, the key technical pattern, and what the workflow helps TAC determine or resolve]
 
 ## Trigger / When to Use
 [symptom/error/situation]
@@ -2433,7 +2673,10 @@ Return the draft in this structure:
 # Known Issue / Release Note Draft
 
 **Draft Status:** DRAFT — PRODUCT/DOCUMENTATION REVIEW REQUIRED
-**Generated From:** ${job.xsup}
+**Generated From:** ${sourceLabel}
+
+## At a Glance
+[2–3 sentence plain-language summary of the issue/limitation, key technical finding, and what the draft helps readers identify or handle]
 
 ## Issue
 [concise issue]
@@ -2496,21 +2739,31 @@ Return the draft in this structure:
   function buildKnowledgeQualityPrompt(job, draftAnswer) {
     const type = job.knowledgeArtifactType || knowledgeArtifactType(job);
     const label = knowledgeArtifactLabel(type);
+    const sourceLabel = knowledgeSourceLabel(job);
+    const direct = isDirectKcsJob(job);
 
     return `
 KNOWLEDGE QUALITY REVIEW + FINALIZATION
 
-Target XSUP: ${job.xsup}
+Source Case: ${sourceLabel}
+Linked XSUP: ${realXsupForJob(job) || "Not identified / not required"}
 SFDC: ${job.caseNumber}
 Product: ${productLabel(job)}
 Artifact Type: ${label}
-Initial Retrospective Readiness: ${job.artifactReadiness || "DRAFTABLE"}
+Initial ${direct ? "Direct-KCS" : "Retrospective"} Readiness: ${job.artifactReadiness || "DRAFTABLE"}
 
-RETROSPECTIVE — AUTHORITATIVE CASE BASIS
+${direct ? "DIRECT KCS CASE BASIS — AUTHORITATIVE CASE CONTEXT" : "RETROSPECTIVE — AUTHORITATIVE CASE BASIS"}
 ${job.auditAnswer}
 
 ENRICHED DRAFT TO REVIEW
 ${draftAnswer}
+
+PRE-QUALITY STRUCTURAL REVIEW NOTES
+${Array.isArray(job.knowledgeDraftReviewIssues) && job.knowledgeDraftReviewIssues.length
+  ? job.knowledgeDraftReviewIssues.map((issue, i) => `${i + 1}. ${issue}`).join("\n")
+  : "None detected."}
+
+If a structural review note is listed above, repair it when the evidence allows. If it cannot be repaired safely, DO NOT discard the draft. Return the best usable draft, set VALIDATED_ARTIFACT_READINESS to NOT READY, and preserve the unresolved issue for human review.
 
 TASK
 Act as an independent knowledge editor/reviewer.
@@ -2521,6 +2774,10 @@ You may use additional source material that is actually available to this Case C
 ${knowledgeQualityRubric(type)}
 
 MANDATORY REVIEW ACTIONS
+- Ensure the final artifact contains ## At a Glance immediately after the title/draft metadata.
+- At a Glance must be 2–3 concise, plain-language sentences that state the topic/problem, key technical finding, and what the artifact helps the reader do.
+- Ensure At a Glance is understandable without reading the originating XSUP, is reusable across customers, and contains no unsupported new claim, XSUP/SFDC ID, source dump, validation list, or quality/process commentary.
+- If the draft's At a Glance is missing, vague, case-specific, misleading, or too long, rewrite it from supported content already present in the supplied case basis/artifact.
 - Remove or rewrite unsupported/inferred claims.
 - Remove unnecessary customer/case-specific details from reusable content.
 - Keep only directly relevant references.
@@ -2555,13 +2812,13 @@ ANNOTATION RULES
 9. For fenced code blocks, place the review marker immediately AFTER the closing Markdown code fence or in the explanatory sentence beside the block; do not place review-marker syntax inside executable code.
 
 PROVENANCE RESOLUTION — MANDATORY
-The retrospective or enriched draft may contain internal analytical markers such as:
+The supplied case basis or enriched draft may contain internal analytical markers such as:
 [inference], [from case data], [derived analysis].
 These markers are useful during investigation but are NEVER allowed in the final user-facing artifact.
 
 For EVERY statement carrying one of those markers:
 1. Do NOT merely delete the marker while leaving the claim unchanged.
-2. If the claim is supported by an underlying source explicitly available in the supplied retrospective/draft, rewrite it as a normal sourced statement and cite/identify that underlying source.
+2. If the claim is supported by an underlying source explicitly available in the supplied case basis/draft, rewrite it as a normal sourced statement and cite/identify that underlying source.
 3. If the claim is useful but the supplied material does not establish it strongly enough, rewrite it as a clearly named TAC/SME validation item and set readiness to DRAFTABLE when material.
 4. If the claim is unnecessary or cannot be supported safely, remove the claim.
 5. Never convert an inference into a confirmed product fact just by removing the marker.
@@ -2599,6 +2856,85 @@ ${KNOWLEDGE_FINAL_DELIMITER}
   }
 
 
+  function compactPromptText(value, maxChars = 9000) {
+    const text = cleanText(String(value || ""));
+    if (text.length <= maxChars) return text;
+    const head = Math.floor(maxChars * 0.62);
+    const tail = maxChars - head;
+    return `${text.slice(0, head)}\n\n[...middle omitted for compact quality retry...]\n\n${text.slice(-tail)}`;
+  }
+
+  function isRetryableKnowledgeQualityError(err) {
+    const message = cleanText(err?.message || String(err || ""));
+    return /(?:422|unprocessable|task rejected|service error|payload|request too large|prompt too large|content too large)/i.test(message);
+  }
+
+  function buildCompactKnowledgeQualityPrompt(job, draftAnswer) {
+    const type = job.knowledgeArtifactType || knowledgeArtifactType(job);
+    const label = knowledgeArtifactLabel(type);
+    const sourceLabel = knowledgeSourceLabel(job);
+
+    return `
+KNOWLEDGE QUALITY REVIEW — COMPACT RETRY
+
+Source Case: ${sourceLabel}
+Linked XSUP: ${realXsupForJob(job) || "Not identified / not required"}
+SFDC: ${job.caseNumber}
+Product: ${productLabel(job)}
+Artifact Type: ${label}
+
+CASE BASIS — COMPACT
+${compactPromptText(job.auditAnswer, 8500)}
+
+DRAFT TO REVIEW — KEEP THE COMPLETE REUSABLE CONTENT
+${String(draftAnswer || "").trim()}
+
+REVIEW OBJECTIVE
+Independently finalize this draft for human review. Do not merely approve the generator.
+Check:
+1. technical accuracy and evidence support,
+2. exact commands/API/UI/path/version/timing/architecture claims,
+3. scope/applicability,
+4. check → confirm → resolve → verify usefulness,
+5. required artifact structure,
+6. Source References,
+7. customer-specific overfitting,
+8. internal metadata/placeholders/raw source markup,
+9. consistency between inline markers, Validation Items and readiness.
+
+INLINE MARKERS
+Use these exact markers immediately after the affected statement when unresolved:
+[[SME_REVIEW|reason]]
+[[ENGINEERING_REVIEW|reason]]
+[[INFERENCE|reason]]
+[[SOURCE_CHECK|reason]]
+[[SCOPE_CHECK|reason]]
+[[RECOMMENDATION|reason]]
+[[CONFIRMED|source cue]]
+[[UNSUPPORTED|reason]]
+
+Rules:
+- TACO/Case Chat is synthesis, not the underlying factual source.
+- Do not remove uncertainty by simply deleting a marker.
+- Material SME/Engineering/Inference/Source/Scope items require DRAFTABLE.
+- UNSUPPORTED is a blocker: support/rewrite/remove it or return FAIL + NOT READY.
+- Remove escaped/raw <ref>, <verification-warning>, internal metadata and placeholders.
+- Keep ## At a Glance concise, reusable and evidence-backed.
+- Do not invent new commands, APIs, versions, timings, paths, architecture or fixes.
+- This remains a human-reviewed draft.
+
+OUTPUT EXACTLY:
+
+QUALITY_STATUS: [PASS / PASS_WITH_VALIDATION / FAIL]
+VALIDATED_ARTIFACT_READINESS: [READY / DRAFTABLE / NOT READY]
+QUALITY_SUMMARY: [one concise sentence]
+MATERIAL_VALIDATION_ITEMS: [None / concise list]
+
+${KNOWLEDGE_FINAL_DELIMITER}
+[complete polished ${label}]
+`.trim();
+  }
+
   function shouldAttemptKnowledgeQualityRepair(parsed) {
     if (!parsed || parsed.status === "FAIL") return false;
 
@@ -2617,6 +2953,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
   function buildKnowledgeQualityRepairPrompt(job, previousQualityAnswer, parsedFailure) {
     const type = job.knowledgeArtifactType || knowledgeArtifactType(job);
     const label = knowledgeArtifactLabel(type);
+    const sourceLabel = knowledgeSourceLabel(job);
     const issues = Array.isArray(parsedFailure?.issues) && parsedFailure.issues.length
       ? parsedFailure.issues.map(x => `- ${x}`).join("\n")
       : "- deterministic quality/safety validation did not approve the artifact";
@@ -2624,7 +2961,8 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     return `
 KNOWLEDGE FINAL ARTIFACT REPAIR — ONE AUTOMATIC REMEDIATION PASS
 
-Target XSUP: ${job.xsup}
+Source Case: ${sourceLabel}
+Linked XSUP: ${realXsupForJob(job) || "Not identified / not required"}
 SFDC: ${job.caseNumber}
 Product: ${productLabel(job)}
 Artifact Type: ${label}
@@ -2647,6 +2985,7 @@ ${issues}
 
 REPAIR RULES
 1. Preserve correct, useful, source-supported content.
+1a. Ensure ## At a Glance exists near the top and contains 2–3 concise sentences explaining the topic/problem, key finding, and what the artifact helps the reader do. Repair it using only supported content already available in the supplied material.
 2. Do not introduce new product facts, commands, APIs, paths, versions, timing, architecture, workarounds, fixes, or source claims unless they are explicitly supported by the supplied retrospective/previous draft material.
 3. Internal provenance markers such as [inference], [from case data], and [derived analysis] must not appear in the final artifact.
 4. Do NOT fix a provenance marker by simply deleting the marker:
@@ -2668,6 +3007,7 @@ ${knowledgeQualityRubric(type)}
 
 FINAL SELF-CHECK BEFORE OUTPUT
 - required artifact structure is present,
+- At a Glance is present, accurate, reusable, and 2–3 concise sentences,
 - no internal provenance/reuse marker remains,
 - no unresolved placeholder/token remains,
 - no unsupported statement was promoted to fact,
@@ -2696,20 +3036,163 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       .trim();
   }
 
+  function sanitizeKnowledgeSourceMarkup(value) {
+    let text = String(value || "");
+
+    // Model/TACO source markup is useful internally but should never render as
+    // escaped <ref>/<verification-warning> syntax in a human-facing article.
+    text = text.replace(
+      /<verification-warning>([\s\S]*?)<\/verification-warning>/gi,
+      (_, inner) => `${inner} [[SOURCE_CHECK|The supporting source was flagged for verification; confirm the underlying source before publication.]]`
+    );
+
+    text = text.replace(
+      /<ref\b([^>]*)>([\s\S]*?)<\/ref>/gi,
+      (_, attrs, body) => {
+        const url = cleanText(attrs.match(/\burl="([^"]+)"/i)?.[1] || "");
+        const title = cleanText(attrs.match(/\btitle="([^"]+)"/i)?.[1] || "Supporting source");
+        const quote = cleanText(
+          String(body || "")
+            .replace(/<q>([\s\S]*?)<\/q>/gi, '"$1"')
+            .replace(/<[^>]+>/g, " ")
+        );
+        const source = url && /^https?:\/\//i.test(url)
+          ? `[Source: ${title}](${url})`
+          : `Source: ${title}`;
+        return `${quote ? `${quote} ` : ""}${source}`;
+      }
+    );
+
+    return text
+      .replace(/<\/?(?:verification-warning|ref|q)\b[^>]*>/gi, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  function addPreliminaryKnowledgeReviewMarkers(value) {
+    const source = String(value || "");
+    const lines = source.split(/\r?\n/);
+    let inFence = false;
+    let section = "";
+
+    const excludedSections = new Set([
+      "SOURCE REFERENCES",
+      "RELATED KNOWLEDGE / DOCUMENTATION",
+      "SEARCH KEYWORDS",
+      "TAC/SME VALIDATION ITEMS",
+      "VALIDATION ITEMS"
+    ]);
+
+    const alreadyMarked = line => reviewMarkerPattern().test(line);
+
+    const add = (line, type, reason) => {
+      if (alreadyMarked(line)) return line;
+      return `${line} [[${type}|${reason}]]`;
+    };
+
+    return lines.map(rawLine => {
+      let line = rawLine;
+
+      if (/^\s*```/.test(line)) {
+        inFence = !inFence;
+        return line;
+      }
+      if (inFence) return line;
+
+      const heading = line.match(/^\s*##\s+(.+?)\s*$/);
+      if (heading) {
+        section = cleanText(heading[1]).toUpperCase();
+        return line;
+      }
+
+      if (!cleanText(line) || /^\s*#/.test(line) || excludedSections.has(section)) {
+        return line;
+      }
+
+      const checks = [];
+
+      if (
+        /\b(?:GET|POST|PUT|PATCH|DELETE)\s+\/[A-Za-z0-9_./{}:-]+/i.test(line) ||
+        /\b(?:backend|database pipeline|internal architecture|agent_chunk|calculation job|implementation detail)\b/i.test(line)
+      ) {
+        checks.push([
+          "ENGINEERING_REVIEW",
+          "Exact backend/API/implementation behavior should be confirmed against authoritative Engineering or product documentation."
+        ]);
+      }
+
+      if (
+        /\b(?:cytool|xql|pan_dss_raw|CloudIdAgentDebug|CloudIdAgentConfig)\b/i.test(line) ||
+        /\\Program Files(?: \(x86\))?\\/i.test(line) ||
+        /Endpoints\s*(?:→|->|>|\/)\s*All Endpoints/i.test(line) ||
+        /\bEndpoint Control\b/i.test(line)
+      ) {
+        checks.push([
+          "SOURCE_CHECK",
+          "Exact command, dataset, path, or UI detail should be verified against an authoritative underlying source."
+        ]);
+      }
+
+      if (
+        /\b\d+(?:\.\d+)?\s*(?:-|to)?\s*\d*(?:\.\d+)?\s*(?:minutes?|hours?|days?)\b/i.test(line) ||
+        /\b\d+(?:\.\d+)?[- ]hour\b/i.test(line) ||
+        /\b(?:agent\s+)?versions?\s+[0-9x.,\s/-]+/i.test(line) ||
+        /\bup to\s+\d+\s+(?:domain\s+)?(?:nesting\s+)?levels?\b/i.test(line)
+      ) {
+        checks.push([
+          "SCOPE_CHECK",
+          "Exact timing/version/applicability scope should be confirmed before publication."
+        ]);
+      }
+
+      if (
+        /\b(?:CPU starvation|thread contention|third-party antivirus|recursive group membership)\b/i.test(line)
+      ) {
+        checks.push([
+          "SOURCE_CHECK",
+          "This additional troubleshooting claim needs a direct supporting source before it can be treated as reusable product guidance."
+        ]);
+      }
+
+      if (/\b(?:recommended|best practice|prefer|long-term solution)\b/i.test(line)) {
+        checks.push([
+          "RECOMMENDATION",
+          "This is guidance/recommendation rather than a mandatory product behavior."
+        ]);
+      }
+
+      // Keep fallback annotation readable: at most two materially distinct
+      // markers per Markdown line. The independent quality reviewer may remove,
+      // confirm, narrow, or replace these based on stronger evidence.
+      const seen = new Set();
+      for (const [type, reason] of checks) {
+        if (seen.has(type)) continue;
+        seen.add(type);
+        line = add(line, type, reason);
+        if (seen.size >= 2) break;
+      }
+      return line;
+    }).join("\n");
+  }
+
   function resolveRawProvenanceForHumanReview(text) {
-    return stripInternalKnowledgeMetadata(text)
-      .replace(
-        /\[inference\]/gi,
-        "[[INFERENCE|This statement is derived from available evidence but is not directly established; validate or source it before publication.]]"
+    return addPreliminaryKnowledgeReviewMarkers(
+      sanitizeKnowledgeSourceMarkup(
+        stripInternalKnowledgeMetadata(text)
+          .replace(
+            /\[inference\]/gi,
+            "[[INFERENCE|This statement is derived from available evidence but is not directly established; validate or source it before publication.]]"
+          )
+          .replace(
+            /\[derived analysis\]/gi,
+            "[[INFERENCE|This statement comes from derived analysis; validate or source it before publication.]]"
+          )
+          .replace(
+            /\[from case data\]/gi,
+            "[[SOURCE_CHECK|This statement is case-derived; confirm the underlying authoritative source before publication.]]"
+          )
       )
-      .replace(
-        /\[derived analysis\]/gi,
-        "[[INFERENCE|This statement comes from derived analysis; validate or source it before publication.]]"
-      )
-      .replace(
-        /\[from case data\]/gi,
-        "[[SOURCE_CHECK|This statement is case-derived; confirm the underlying authoritative source before publication.]]"
-      );
+    );
   }
 
   function extractKnowledgeSection(text, headingNames) {
@@ -2747,25 +3230,56 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     if (/@@[A-Z][A-Z0-9_:-]*@@/i.test(text)) issues.push("unresolved internal placeholder/token is visible");
     if (/\[(?:inference|from case data|derived analysis)\]/i.test(text)) issues.push("raw internal provenance marker is visible");
     if (/\[(?:insert|todo|tbd|placeholder)[^\]]*\]/i.test(text)) issues.push("unresolved editorial placeholder is visible");
+    if (/<\/?(?:ref|verification-warning|q)\b/i.test(text)) issues.push("raw source/provenance markup is visible");
 
     const fences = (text.match(/```/g) || []).length;
     if (fences % 2 !== 0) issues.push("Markdown code fence is not balanced");
 
     const requiredHeadingSets = {
-      KCS_DRAFT: ["Symptoms / Error", "Cause", "How to Check", "How to Confirm", "Resolution / Fix", "Source References"],
-      KCS_UPDATE: ["Existing Knowledge Reference", "Gap Identified", "Proposed Additions / Changes", "Source References"],
-      DOC_UPDATE: ["Target Documentation", "Documentation Gap", "Proposed Documentation Text", "Source References"],
-      RUNBOOK: ["Trigger / When to Use", "Objective", "Investigation Workflow", "Decision Points", "Source References"],
-      KNOWN_ISSUE: ["Issue", "Symptoms", "Cause / Limitation", "Proposed Release Note / Known Issue Text", "Source References"]
+      KCS_DRAFT: ["At a Glance", "Symptoms / Error", "Cause", "How to Check", "How to Confirm", "Resolution / Fix", "Source References"],
+      KCS_UPDATE: ["At a Glance", "Existing Knowledge Reference", "Gap Identified", "Proposed Additions / Changes", "Source References"],
+      DOC_UPDATE: ["At a Glance", "Target Documentation", "Documentation Gap", "Proposed Documentation Text", "Source References"],
+      RUNBOOK: ["At a Glance", "Trigger / When to Use", "Objective", "Investigation Workflow", "Decision Points", "Source References"],
+      KNOWN_ISSUE: ["At a Glance", "Issue", "Symptoms", "Cause / Limitation", "Proposed Release Note / Known Issue Text", "Source References"]
     };
     for (const heading of requiredHeadingSets[type] || []) {
       const re = new RegExp(`(?:^|\\n)##\\s+${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*(?:\\n|$)`, "i");
       if (!re.test(text)) issues.push(`missing required section: ${heading}`);
     }
 
+    const atAGlance = extractKnowledgeSection(text, ["At a Glance"]);
+    if (atAGlance) {
+      const summaryPlain = cleanText(
+        atAGlance
+          .replace(reviewMarkerPattern(), "")
+          .replace(/[`*_>#-]/g, " ")
+      );
+      const summarySentences = (summaryPlain.match(/[^.!?]+[.!?]+(?:\s|$)/g) || [])
+        .map(s => cleanText(s))
+        .filter(Boolean);
+      const summaryWords = summaryPlain.split(/\s+/).filter(Boolean).length;
+
+      if (summarySentences.length < 2 || summarySentences.length > 3) {
+        issues.push("At a Glance should contain 2–3 concise sentences");
+      }
+      if (summaryWords < 20) {
+        issues.push("At a Glance is too brief to explain the topic, key finding, and reader value");
+      }
+      if (summaryWords > 110) {
+        issues.push("At a Glance is too long; keep it concise and scannable");
+      }
+      if (/\bXSUP-\d+\b/i.test(summaryPlain) || (job.caseNumber && new RegExp(`\\b${String(job.caseNumber).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(summaryPlain))) {
+        issues.push("At a Glance contains originating XSUP/SFDC case identifiers");
+      }
+      if (/quality review|quality gate|validation items?|case chat|TACO analysis/i.test(summaryPlain)) {
+        issues.push("At a Glance contains internal generation/review-process commentary");
+      }
+    }
+
     const generatedFrom = extractField(text, "Generated From");
-    if (generatedFrom && !generatedFrom.toUpperCase().includes(String(job.xsup).toUpperCase())) {
-      issues.push(`artifact targets ${generatedFrom}, not ${job.xsup}`);
+    const expectedGeneratedFrom = knowledgeSourceLabel(job);
+    if (generatedFrom && !generatedFrom.toUpperCase().includes(expectedGeneratedFrom.toUpperCase())) {
+      issues.push(`artifact targets ${generatedFrom}, not ${expectedGeneratedFrom}`);
     }
 
     const keywordSection = extractKnowledgeSection(text, ["Search Keywords"]);
@@ -2797,7 +3311,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     if (issues.length && readiness === "READY") readiness = "DRAFTABLE";
 
     const blocking = issues.some(issue =>
-      /incomplete|internal reuse metadata|unresolved internal placeholder|raw internal provenance|unresolved editorial placeholder|code fence|missing required section|artifact targets|Source References|unsupported review marker/i.test(issue)
+      /incomplete|internal reuse metadata|unresolved internal placeholder|raw internal provenance|raw source\/provenance markup|unresolved editorial placeholder|code fence|missing required section|artifact targets|Source References|unsupported review marker/i.test(issue)
     );
 
     if (blocking) readiness = "NOT READY";
@@ -3060,7 +3574,9 @@ ${KNOWLEDGE_FINAL_DELIMITER}
 
     const fingerprint = stableHashText(JSON.stringify({
       schema: KNOWLEDGE_REUSE_SCHEMA,
-      xsup: job.xsup,
+      workflowMode: job.workflowMode || "retrospective",
+      source: knowledgeSourceLabel(job),
+      xsup: realXsupForJob(job),
       caseNumber: job.caseNumber,
       investigationId: job.investigationId,
       product: job.productKey || "UNSELECTED",
@@ -3075,6 +3591,8 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       type: "knowledge",
       schema: KNOWLEDGE_REUSE_SCHEMA,
       fingerprint,
+      workflowMode: job.workflowMode || "retrospective",
+      source: knowledgeSourceLabel(job),
       product: job.productKey || "UNSELECTED",
       audit: job.auditFingerprint || auditHash,
       action,
@@ -3370,8 +3888,12 @@ ${KNOWLEDGE_FINAL_DELIMITER}
   }
 
   function validateReusableKnowledgeAnswer(answer, job, reuseType = "knowledge") {
-    const a = String(answer || "").trim();
-    if (a.length < 160) return {valid:false, reason:"artifact is incomplete"};
+    const raw = String(answer || "").trim();
+    const a = reuseType === "knowledge_draft"
+      ? resolveRawProvenanceForHumanReview(raw)
+      : raw;
+
+    if (a.length < 160) return {valid:false, reason:"artifact is incomplete", artifact:a};
 
     if (reuseType === "knowledge") {
       const parsed = parseKnowledgeQualityResponse(a, job);
@@ -3391,19 +3913,18 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     }[type];
 
     if (expected && !expected.test(a)) {
-      return {valid:false, reason:`result does not match ${knowledgeArtifactLabel(type)} structure`};
+      return {valid:false, reason:`result does not match ${knowledgeArtifactLabel(type)} structure`, artifact:a};
     }
 
     const generatedFrom = extractField(a, "Generated From");
-    if (generatedFrom && !generatedFrom.toUpperCase().includes(job.xsup.toUpperCase())) {
-      return {valid:false, reason:`artifact targets ${generatedFrom}, not ${job.xsup}`};
+    const expectedGeneratedFrom = knowledgeSourceLabel(job);
+    if (generatedFrom && !generatedFrom.toUpperCase().includes(expectedGeneratedFrom.toUpperCase())) {
+      return {valid:false, reason:`artifact targets ${generatedFrom}, not ${expectedGeneratedFrom}`, artifact:a};
     }
 
-    if (a.includes(REUSE_META_PREFIX)) {
-      return {valid:false, reason:"draft contains internal reuse metadata"};
-    }
-
-    return {valid:true};
+    // Internal reuse metadata is tool plumbing, not a reviewer-facing content problem.
+    // It is stripped before draft validation and must never block generation.
+    return {valid:true, artifact:a};
   }
 
   async function tryReuseCaseChat({
@@ -4770,7 +5291,9 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     job.knowledgeDraftFollowupId = null;
     job.knowledgeDraftCompletedAt = null;
     job.knowledgeDraftReuseStatus = "not_checked";
+    job.knowledgeDraftReviewIssues = [];
     job.knowledgeQualityStatus = "";
+    job.knowledgeQualityIssues = [];
     job.knowledgeQualitySummary = "";
     job.knowledgeQualityValidationItems = "";
     job.validatedArtifactReadiness = "";
@@ -4911,7 +5434,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
 
     const jobs = [...state.jobs.values()];
     if (!jobs.length) {
-      list.innerHTML = `<div class="xa-job-empty">Paste one or more XSUP IDs above and click Run Audit(s).</div>`;
+      list.innerHTML = `<div class="xa-job-empty">Enter XSUP IDs for retrospective review, or XSUP/SFDC case numbers for direct KCS generation.</div>`;
       return;
     }
 
@@ -5256,14 +5779,18 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       ["resolve", "Resolve SFDC case", job.steps.resolve || (job.caseNumber || "Not started"), ""],
       ["taco", "TACO Analysis", tacoDetail, "Freshness is automatic. Completed TACO is reused when no newer Jira/SFDC evidence exists."],
       ["evidence", "Original evidence", job.steps.evidence || "Not started", "Original Jira/SFDC evidence used to prove Support-owned field decisions."],
-      ["audit", "Retrospective audit",
-        job.auditReuseStatus === "reused"
-          ? `REUSED EXISTING · Case Chat #${job.auditFollowupId || "?"} · originally completed ${formatTimestamp(job.auditCompletedAt)}`
-          : ["generated","regenerated"].includes(job.auditReuseStatus)
-            ? `NEWLY GENERATED · Case Chat #${job.auditFollowupId || "?"} · completed ${formatTimestamp(job.auditCompletedAt)}`
-            : job.steps.audit || "Not started",
-        "Shows whether the audit was reused from existing Case Chat history or generated newly."],
-      ["knowledge", "Knowledge artifact", knowledgeStageDetail(job), "Shows whether the knowledge artifact was reused or newly generated."],
+      ["audit", isDirectKcsJob(job) ? "Retrospective field review" : "Retrospective audit",
+        isDirectKcsJob(job)
+          ? "SKIPPED · Direct KCS mode"
+          : job.auditReuseStatus === "reused"
+            ? `REUSED EXISTING · Case Chat #${job.auditFollowupId || "?"} · originally completed ${formatTimestamp(job.auditCompletedAt)}`
+            : ["generated","regenerated"].includes(job.auditReuseStatus)
+              ? `NEWLY GENERATED · Case Chat #${job.auditFollowupId || "?"} · completed ${formatTimestamp(job.auditCompletedAt)}`
+              : job.steps.audit || "Not started",
+        isDirectKcsJob(job)
+          ? "Direct KCS mode intentionally skips the Support-owned retrospective field review."
+          : "Shows whether the audit was reused from existing Case Chat history or generated newly."],
+      ["knowledge", isDirectKcsJob(job) ? "KCS generation & quality" : "Knowledge artifact", knowledgeStageDetail(job), "Shows whether the knowledge artifact was reused or newly generated."],
       ["artifact", "Artifact download/save", artifactStageDetail(job), "Default is browser download. A selected folder becomes the destination for the current session."]
     ];
 
@@ -5363,14 +5890,19 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       ? "Regenerate KCS"
       : "Regenerate Knowledge";
 
+    const direct = isDirectKcsJob(job);
     box.innerHTML = `
       <div class="xa-reuse-head">
         <div>
           <strong>Analysis &amp; Reuse Status</strong>
-          <span>Shows exactly which existing Case Chat was reused, or whether a new result had to be generated.</span>
+          <span>${direct
+            ? "Direct KCS mode reuses current TACO/evidence and existing compatible KCS results when safe."
+            : "Shows exactly which existing Case Chat was reused, or whether a new result had to be generated."}</span>
         </div>
         <div class="xa-reuse-actions">
-          <button id="xa-reanalyse-all" ${busy ? "disabled" : ""} data-tooltip="Force a fresh TACO analysis, then create a new retrospective audit and new knowledge artifact. Use only when you intentionally want to ignore all reusable results.">Re-analyze All</button>
+          <button id="xa-reanalyse-all" ${busy ? "disabled" : ""} data-tooltip="${direct
+            ? "Force a fresh TACO analysis, then generate a fresh KCS. The retrospective field review remains skipped."
+            : "Force a fresh TACO analysis, then create a new retrospective audit and new knowledge artifact. Use only when you intentionally want to ignore all reusable results."}">Re-analyze All</button>
         </div>
       </div>
       <div class="xa-reuse-grid">
@@ -5381,7 +5913,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
           date: job.tacoAnalysisAt,
           reason: job.tacoDecisionReason
         })}
-        ${card({
+        ${direct ? "" : card({
           label: "Retrospective Audit",
           status: job.auditReuseStatus,
           kind: "audit",
@@ -5397,7 +5929,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
           actionTooltip: "Create a new Retrospective Audit using the current TACO analysis and current Jira/SFDC evidence. TACO is not re-run."
         })}
         ${card({
-          label: "Knowledge Artifact",
+          label: direct ? "Direct KCS" : "Knowledge Artifact",
           status: job.knowledgeReuseStatus,
           kind: "knowledge",
           date: job.knowledgeCompletedAt,
@@ -5407,15 +5939,19 @@ ${KNOWLEDGE_FINAL_DELIMITER}
           priorDate: job.priorKnowledgeCompletedAt,
           priorReason: job.priorKnowledgeReason,
           actionId: "xa-regenerate-knowledge",
-          actionLabel: knowledgeActionLabel,
+          actionLabel: direct ? "Regenerate KCS" : knowledgeActionLabel,
           actionDisabled: knowledgeActionDisabled,
-          actionTooltip: "Create a new knowledge artifact from the current completed audit using the latest enrichment and quality-review workflow. TACO and the audit are not re-run."
+          actionTooltip: direct
+            ? "Create a new KCS from the current TACO analysis and original evidence. The retrospective field review is not run."
+            : "Create a new knowledge artifact from the current completed audit using the latest enrichment and quality-review workflow. TACO and the audit are not re-run."
         })}
       </div>
     `;
 
     document.getElementById("xa-reanalyse-all")?.addEventListener("click", () => forceReanalyzeTaco(job.xsup));
-    document.getElementById("xa-regenerate-audit")?.addEventListener("click", () => forceRerunAudit(job.xsup));
+    if (!direct) {
+      document.getElementById("xa-regenerate-audit")?.addEventListener("click", () => forceRerunAudit(job.xsup));
+    }
     document.getElementById("xa-regenerate-knowledge")?.addEventListener("click", () => forceRegenerateKnowledge(job.xsup));
   }
 
@@ -5515,7 +6051,9 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     job.knowledgeDraftFollowupId = null;
     job.knowledgeDraftCompletedAt = null;
     job.knowledgeDraftReuseStatus = "not_checked";
+    job.knowledgeDraftReviewIssues = [];
     job.knowledgeQualityStatus = "";
+    job.knowledgeQualityIssues = [];
     job.knowledgeQualitySummary = "";
     job.knowledgeQualityValidationItems = "";
     job.validatedArtifactReadiness = "";
@@ -5619,7 +6157,9 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     job.knowledgeDraftFollowupId = null;
     job.knowledgeDraftCompletedAt = null;
     job.knowledgeDraftReuseStatus = "not_checked";
+    job.knowledgeDraftReviewIssues = [];
     job.knowledgeQualityStatus = "";
+    job.knowledgeQualityIssues = [];
     job.knowledgeQualitySummary = "";
     job.knowledgeQualityValidationItems = "";
     job.validatedArtifactReadiness = "";
@@ -5644,6 +6184,38 @@ ${KNOWLEDGE_FINAL_DELIMITER}
   function renderDecisionSummary(job) {
     const box = document.getElementById("xsup-auditor-decision-summary");
     if (!box || !job) return;
+
+    if (isDirectKcsJob(job)) {
+      const readiness = job.validatedArtifactReadiness || job.artifactReadiness || "DRAFTABLE";
+      const reviewCount = knowledgeReviewCount(job);
+      box.innerHTML = `
+        <div class="xa-decision-group">
+          <div class="xa-decision-group-title">Direct KCS Generation</div>
+          <div class="xa-decision-table-wrap">
+            <table class="xa-decision-table">
+              <thead><tr><th>Review item</th><th>Result</th><th>Action / meaning</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><strong>Retrospective field review</strong></td>
+                  <td>${semanticChipHtml("NOT APPLICABLE", "eligibility")}</td>
+                  <td class="xa-table-explain">Skipped intentionally. Direct KCS mode does not review Resolution, RCA, Fix Type, or Labels.</td>
+                </tr>
+                <tr>
+                  <td><strong>KCS draft</strong></td>
+                  <td>${semanticChipHtml(readiness, "readiness")}</td>
+                  <td class="xa-table-explain">${escapeHtml(
+                    job.knowledgeStatus === "completed"
+                      ? `${reviewCount ? `${reviewCount} review item${reviewCount === 1 ? "" : "s"} remain. ` : ""}Human review is required before publication.`
+                      : "KCS generation and quality review are in progress or queued."
+                  )}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+      return;
+    }
 
     const fieldRows = [];
     const addField = (label, changeNeeded, verdict, recommended) => {
@@ -5744,7 +6316,8 @@ ${KNOWLEDGE_FINAL_DELIMITER}
           ${primaryStatus}
         </div>
         ${job.knowledgeDecisionExplanation ? `<div class="xa-knowledge-decision">${escapeHtml(job.knowledgeDecisionExplanation)}</div>` : ""}
-        ${job.knowledgeError ? `<div class="xa-knowledge-error">${escapeHtml(job.knowledgeError)}</div>` : ""}
+        ${knowledgeBlockingReviewHtml(job)}
+        ${job.knowledgeError && normalizeDecision(job.validatedArtifactReadiness) !== "NOT READY" ? `<div class="xa-knowledge-error">${escapeHtml(job.knowledgeError)}</div>` : ""}
         ${job.knowledgeAnswer ? `<div class="xa-knowledge-preview">${knowledgeMarkdownToHtml(job.knowledgeAnswer)}</div>${knowledgeReviewFooterHtml(job)}` : ""}
         <div class="xa-actions">
           ${canDownload ? `<button id="xsup-auditor-download-knowledge">Download ${escapeHtml(label)}</button>` : ""}
@@ -5801,11 +6374,10 @@ ${KNOWLEDGE_FINAL_DELIMITER}
 
     const title = document.getElementById("xsup-auditor-selected-title");
     if (title) {
-      const suffix = job.caseNumber ? ` · SFDC ${job.caseNumber}` : "";
-      title.textContent = `${job.xsup}${suffix}${job.productKey ? ` · ${productLabel(job)}` : ""}`;
+      title.textContent = `${jobDisplayId(job)}${job.productKey ? ` · ${productLabel(job)}` : ""}${isDirectKcsJob(job) ? " · Direct KCS" : ""}`;
     }
 
-    showReport(job.auditAnswer || (job.error ? `## Audit Error\n\n**${job.error}**` : ""));
+    showReport(job.auditAnswer || (job.error ? `## ${isDirectKcsJob(job) ? "KCS Preparation" : "Audit"} Error\n\n**${job.error}**` : ""));
     const commentOut = document.getElementById("xsup-auditor-xsup-comment");
     if (commentOut) commentOut.value = job.xsupComment || "";
 
@@ -5820,9 +6392,23 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     renderSFDCDetails(job);
     renderReferences(job.references || []);
 
+    const direct = isDirectKcsJob(job);
+    for (const id of [
+      "xsup-auditor-audit-report-title",
+      "xsup-auditor-output",
+      "xsup-auditor-audit-report-actions",
+      "xsup-auditor-review-comment-title",
+      "xsup-auditor-xsup-comment",
+      "xsup-auditor-review-comment-actions"
+    ]) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = direct ? "none" : "";
+    }
+
     const retryBtn = document.getElementById("xsup-auditor-retry-chat");
     if (retryBtn) {
-      retryBtn.disabled = state.running || !job.lastPrompt || !job.caseNumber || !job.investigationId;
+      retryBtn.style.display = direct ? "none" : "";
+      retryBtn.disabled = direct || state.running || !job.lastPrompt || !job.caseNumber || !job.investigationId;
     }
 
     const debugBtn = document.getElementById("xsup-auditor-debug");
@@ -5841,9 +6427,41 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     renderSelectedJob();
   }
 
-  function createJob(xsup) {
+  function isDirectKcsJob(job) {
+    return job?.workflowMode === "direct_kcs";
+  }
+
+  function realXsupForJob(job) {
+    const candidates = [job?.linkedXsup, job?.xsup, job?.sourceInput];
+    for (const value of candidates) {
+      const match = String(value || "").toUpperCase().match(/^XSUP-\d+$/);
+      if (match) return match[0];
+    }
+    return "";
+  }
+
+  function jobDisplayId(job) {
+    const xsup = realXsupForJob(job);
+    if (xsup && job?.caseNumber) return `${xsup} · SFDC ${job.caseNumber}`;
+    if (xsup) return xsup;
+    if (job?.caseNumber) return `SFDC ${job.caseNumber}`;
+    return String(job?.sourceInput || job?.xsup || "Case");
+  }
+
+  function knowledgeSourceLabel(job) {
+    return realXsupForJob(job) || (job?.caseNumber ? `SFDC ${job.caseNumber}` : String(job?.sourceInput || job?.xsup || "Case"));
+  }
+
+  function createJob(xsup, options = {}) {
+    const requestedXsup = /^XSUP-\d+$/i.test(String(options.linkedXsup || xsup || ""))
+      ? String(options.linkedXsup || xsup).toUpperCase()
+      : "";
+    const caseNumber = String(options.caseNumber || "");
     return {
       xsup,
+      workflowMode: options.workflowMode || "retrospective",
+      sourceInput: options.sourceInput || xsup,
+      linkedXsup: requestedXsup,
       status: "queued",
       stageLabel: "Queued",
       steps: {
@@ -5852,7 +6470,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         evidence: "Waiting",
         audit: "Waiting"
       },
-      caseNumber: "",
+      caseNumber,
       sfdcCandidates: [],
       productKey: "",
       productConfidence: "",
@@ -5872,9 +6490,9 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       xsupComment: "",
       references: [],
       targetLinks: {
-        jira: `https://jira-dc.paloaltonetworks.com/browse/${xsup}`,
+        jira: requestedXsup ? `https://jira-dc.paloaltonetworks.com/browse/${requestedXsup}` : "",
         sfdc: "",
-        tacopilot: ""
+        tacopilot: caseNumber ? `${location.origin}/taco/case/${caseNumber}` : ""
       },
       lastPrompt: "",
       verdict: "",
@@ -5918,7 +6536,9 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       knowledgeDraftFollowupId: null,
       knowledgeDraftCompletedAt: null,
       knowledgeDraftReuseStatus: "not_checked",
+      knowledgeDraftReviewIssues: [],
       knowledgeQualityStatus: "",
+      knowledgeQualityIssues: [],
       knowledgeQualitySummary: "",
       knowledgeQualityValidationItems: "",
       validatedArtifactReadiness: "",
@@ -5976,24 +6596,53 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     )];
   }
 
-  function addJobsFromInput() {
-    const input = document.getElementById("xsup-auditor-input");
-    const xsups = parseXSUPs(input?.value || "");
+  function parseDirectKcsInputs(raw) {
+    const matches = String(raw || "").toUpperCase().match(/\bXSUP-\d+\b|\b\d{8}\b/g) || [];
+    const seen = new Set();
+    const parsed = [];
+    for (const token of matches) {
+      const type = /^XSUP-\d+$/.test(token) ? "xsup" : "sfdc";
+      const key = `${type}:${token}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      parsed.push({ type, value: token });
+    }
+    return parsed;
+  }
 
-    if (!xsups.length) {
-      alert("Enter one or more XSUP IDs, for example:\\nXSUP-72446\\nXSUP-81234");
+  function addJobsFromInput(workflowMode = "retrospective") {
+    const input = document.getElementById("xsup-auditor-input");
+    const raw = input?.value || "";
+    const direct = workflowMode === "direct_kcs";
+    const items = direct
+      ? parseDirectKcsInputs(raw)
+      : parseXSUPs(raw).map(value => ({ type: "xsup", value }));
+
+    if (!items.length) {
+      alert(
+        direct
+          ? "Enter one or more XSUP IDs or 8-digit SFDC case numbers, for example:\\nXSUP-72446\\n04005807"
+          : "Enter one or more XSUP IDs, for example:\\nXSUP-72446\\nXSUP-81234"
+      );
       return [];
     }
 
     const added = [];
-    for (const xsup of xsups) {
-      const existing = state.jobs.get(xsup);
+    for (const item of items) {
+      const isSfdc = item.type === "sfdc";
+      const key = isSfdc ? `SFDC:${item.value}` : item.value;
+      const existing = state.jobs.get(key);
       if (existing && ["queued", "running"].includes(existing.status)) continue;
 
-      // A completed/failed/stopped job can be re-run by entering it again.
-      const job = createJob(xsup);
-      state.jobs.set(xsup, job);
-      state.queue.push(xsup);
+      const job = createJob(key, {
+        workflowMode,
+        sourceInput: item.value,
+        caseNumber: isSfdc ? item.value : "",
+        linkedXsup: isSfdc ? "" : item.value
+      });
+
+      state.jobs.set(key, job);
+      state.queue.push(key);
       added.push(job);
     }
 
@@ -6017,6 +6666,69 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     }
   }
 
+  function buildDirectKcsCaseBasis(job, selected) {
+    const report = job.report || {};
+    const structured = job.evidence?.structured_fields || {};
+    const conclusion =
+      report?.verified_conclusion ||
+      report?.result?.rca ||
+      report?.final_report ||
+      report?.result?.guidance ||
+      "NOT AVAILABLE";
+
+    const hypotheses = Array.isArray(report?.hypotheses)
+      ? report.hypotheses
+          .map((h, i) => `${i + 1}. ${cleanText(h?.statement || h?.conclusion || h?.description || "")}`)
+          .filter(x => !/\.\s*$/.test(x) ? cleanText(x.replace(/^\d+\.\s*/, "")) : true)
+          .join("\n")
+      : "";
+
+    const fieldLines = Object.entries(structured)
+      .filter(([, value]) => value != null && cleanText(String(value)))
+      .slice(0, 30)
+      .map(([key, value]) => `- ${key}: ${cleanText(String(value)).slice(0, 500)}`)
+      .join("\n");
+
+    return `
+DIRECT KCS CASE BASIS — NOT A RETROSPECTIVE FIELD REVIEW
+
+Source case: ${knowledgeSourceLabel(job)}
+SFDC Case: ${job.caseNumber}
+Linked XSUP: ${realXsupForJob(job) || "Not identified / not required"}
+Product: ${productLabel(job)}
+
+TACO SYNTHESIZED TECHNICAL CONCLUSION
+${cleanText(String(conclusion)) || "Not available"}
+
+TACO HYPOTHESES / TECHNICAL CONTEXT
+${hypotheses || "None separately listed."}
+
+STRUCTURED CASE FIELDS
+${fieldLines || "No structured fields were extracted."}
+
+FOCUSED ORIGINAL JIRA EVIDENCE
+${formatRecords("JIRA", selected?.jira || [])}
+
+FOCUSED SFDC INTERNAL EVIDENCE
+${formatRecords("SFDC INTERNAL", selected?.internal || [])}
+
+FOCUSED TAC PUBLIC EVIDENCE
+${formatRecords("TAC PUBLIC", selected?.tac_public || [])}
+
+FOCUSED CUSTOMER PUBLIC EVIDENCE
+${formatRecords("CUSTOMER PUBLIC", selected?.customer_public || [])}
+
+IMPORTANT
+- This basis is provided only to generate a reusable KCS draft.
+- It is not a retrospective verdict and does not review Resolution, RCA, Fix Type, or Labels.
+- TACO is synthesized analysis; original Jira/SFDC and underlying documentation/Engineering sources remain the evidence boundary for factual claims.
+`.trim();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Per-case worker
+  // retrospective mode: resolve -> TACO/evidence -> audit -> optional knowledge
+  // direct KCS mode: resolve -> TACO/evidence -> KCS quality pipeline
   // ---------------------------------------------------------------------------
   // Per-XSUP audit worker
   // resolve -> collect source evidence -> smart TACO freshness -> Case Chat audit
@@ -6036,7 +6748,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     try {
       if (!job.caseNumber) {
         setJobStep(job, "resolve", "Resolving linked SFDC cases...", "Resolve SFDC");
-        const candidates = await resolveXSUPCandidates(job.xsup);
+        const candidates = await resolveXSUPCandidates(realXsupForJob(job) || job.sourceInput || job.xsup);
         job.sfdcCandidates = candidates;
 
         if (candidates.length > 1) {
@@ -6062,8 +6774,9 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         const mapping = candidates[0];
         job.caseNumber = mapping.case_number;
         job.selectedCandidate = mapping;
+        const resolvedXsup = realXsupForJob(job);
         job.targetLinks = {
-          jira: `https://jira-dc.paloaltonetworks.com/browse/${job.xsup}`,
+          jira: resolvedXsup ? `https://jira-dc.paloaltonetworks.com/browse/${resolvedXsup}` : "",
           sfdc: mapping.sfdc_url || "",
           tacopilot: `${location.origin}/taco/case/${job.caseNumber}`
         };
@@ -6072,7 +6785,10 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       // Collect original case evidence FIRST so TACO freshness can be determined
       // from actual Jira/SFDC activity rather than age alone.
       setJobStep(job, "resolve", `✓ ${job.caseNumber} · checking case activity`, "TACO freshness");
-      job.evidence = await collectCaseEvidence(job.caseNumber, job.xsup);
+      job.evidence = await collectCaseEvidence(job.caseNumber, realXsupForJob(job));
+      if (!job.linkedXsup && job.evidence?.linked_xsup) {
+        job.linkedXsup = String(job.evidence.linked_xsup).toUpperCase();
+      }
       job.latestCaseEvidenceAt =
         job.evidence?.latest_evidence_timestamp_ms ??
         latestEvidenceTimestamp(job.evidence);
@@ -6122,7 +6838,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
           renderJobList();
           renderDashboard();
           if (job.xsup === state.selectedXsup) renderSelectedJob();
-          showToast(`${job.xsup}: confirm product before the retrospective starts`, "ok");
+          showToast(`${jobDisplayId(job)}: confirm product before ${isDirectKcsJob(job) ? "KCS generation" : "the retrospective"} starts`, "ok");
           setTimeout(showNextProductChooser, 80);
           return;
         }
@@ -6291,6 +7007,39 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       job.productLocked = true;
       if (job.xsup === state.selectedXsup) renderProductControl(job);
 
+      if (isDirectKcsJob(job)) {
+        job.retrospectiveEligibility = "NOT APPLICABLE";
+        job.auditReportedProduct = productLabel(job);
+        job.auditReuseStatus = "not_required";
+        job.auditReuseReason = "Direct KCS mode intentionally skips the retrospective Support-owned field review.";
+        job.auditFollowupId = null;
+        job.auditCompletedAt = Date.now();
+        job.knowledgeAction = "CREATE KCS";
+        job.secondaryKnowledgeAction = "NONE";
+        job.artifactReadiness = "DRAFTABLE";
+        job.artifactTypeFromAudit = "KCS Draft";
+        job.knowledgeDecisionExplanation =
+          "Direct KCS mode was requested. The case is sent directly through KCS generation, independent quality review, deterministic checks, and human review without running the retrospective field-review prompt.";
+        job.autoGenerateKnowledgeDecision = "YES";
+        job.knowledgeArtifactType = "KCS_DRAFT";
+        job.auditAnswer = buildDirectKcsCaseBasis(job, selected);
+        job.auditFingerprint = "";
+        job.lastPrompt = "";
+
+        job.status = "completed";
+        job.stageLabel = "KCS queued";
+        job.endedAt = Date.now();
+        job.overallProgress = 100;
+        setJobStep(job, "audit", "Skipped · Direct KCS mode", "KCS generation", {
+          activity: "Case context ready · retrospective field review skipped · KCS queued"
+        });
+
+        if (job.xsup === state.selectedXsup) renderSelectedJob();
+        queueKnowledgeArtifact(job);
+        showToast(`✓ ${jobDisplayId(job)} case context ready · KCS generation queued`, "ok");
+        return;
+      }
+
       const basePrompt = buildAuditPrompt({
         job,
         report: job.report,
@@ -6440,8 +7189,13 @@ ${KNOWLEDGE_FINAL_DELIMITER}
   }
 
   function shouldGenerateKnowledge(job) {
-    if (!state.autoGenerateKnowledge) return false;
     if (!job?.auditAnswer) return false;
+
+    if (isDirectKcsJob(job)) {
+      return Boolean(knowledgeArtifactType(job));
+    }
+
+    if (!state.autoGenerateKnowledge) return false;
     const eligibility = normalizeDecision(job.retrospectiveEligibility);
     if (eligibility && eligibility !== "IN SCOPE") return false;
 
@@ -6623,7 +7377,8 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         });
 
         if (draftReuse.reused) {
-          job.knowledgeDraftAnswer = stripInternalKnowledgeMetadata(draftReuse.answer);
+          job.knowledgeDraftAnswer = resolveRawProvenanceForHumanReview(draftReuse.answer);
+          job.knowledgeDraftReviewIssues = [];
           job.knowledgeDraftFollowupId = draftReuse.followupId;
           job.knowledgeDraftCompletedAt = draftReuse.completedAt || Date.now();
           job.knowledgeDraftReuseStatus = "reused";
@@ -6657,16 +7412,27 @@ ${KNOWLEDGE_FINAL_DELIMITER}
             update
           );
 
+          const reviewableDraft = resolveRawProvenanceForHumanReview(draftRaw);
+          job.knowledgeDraftAnswer = reviewableDraft;
+
+          if (reviewableDraft.length < 160) {
+            throw new Error("Knowledge enrichment did not return a usable draft.");
+          }
+
           const draftValidation = validateReusableKnowledgeAnswer(
-            draftRaw,
+            reviewableDraft,
             job,
             "knowledge_draft"
           );
-          if (!draftValidation.valid) {
-            throw new Error(`Generated enriched draft failed structural validation: ${draftValidation.reason}.`);
+
+          job.knowledgeDraftReviewIssues = draftValidation.valid
+            ? []
+            : [draftValidation.reason || "Enriched draft needs structural review."];
+
+          if (job.knowledgeDraftReviewIssues.length) {
+            update(`Draft generated with ${job.knowledgeDraftReviewIssues.length} structural review item · continuing to independent quality review...`);
           }
 
-          job.knowledgeDraftAnswer = stripInternalKnowledgeMetadata(draftRaw);
           job.knowledgeDraftCompletedAt = Date.now();
           job.knowledgeDraftReuseStatus = job.forceKnowledgeRefresh ? "regenerated" : "generated";
         }
@@ -6686,31 +7452,74 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         const qualityPrompt = appendReuseMarker(qualityBasePrompt, meta);
         job.knowledgePrompt = qualityPrompt;
 
-        const submitQuality = await postFollowup(
-          job.caseNumber,
-          job.investigationId,
-          qualityPrompt
-        );
-        const qualityTaskId = submitQuality?.task_id;
-        if (!qualityTaskId) throw new Error("Knowledge quality review Case Chat did not return task_id.");
+        let qualityRaw = "";
+        let qualityFollowupId = null;
 
-        const directQualityId = extractFollowupId(submitQuality);
-        const qualityFollowupId = directQualityId || await waitForFollowupId(
-          job.caseNumber,
-          job.investigationId,
-          qualityTaskId,
-          qualityPrompt,
-          update
-        );
+        try {
+          const submitQuality = await postFollowup(
+            job.caseNumber,
+            job.investigationId,
+            qualityPrompt
+          );
+          const qualityTaskId = submitQuality?.task_id;
+          if (!qualityTaskId) throw new Error("Knowledge quality review Case Chat did not return task_id.");
 
-        job.knowledgeFollowupId = qualityFollowupId;
-        update(`Quality review Case Chat #${qualityFollowupId}`);
+          const directQualityId = extractFollowupId(submitQuality);
+          qualityFollowupId = directQualityId || await waitForFollowupId(
+            job.caseNumber,
+            job.investigationId,
+            qualityTaskId,
+            qualityPrompt,
+            update
+          );
 
-        const qualityRaw = await waitForFollowup(
-          job.caseNumber,
-          qualityFollowupId,
-          update
-        );
+          job.knowledgeFollowupId = qualityFollowupId;
+          update(`Quality review Case Chat #${qualityFollowupId}`);
+
+          qualityRaw = await waitForFollowup(
+            job.caseNumber,
+            qualityFollowupId,
+            update
+          );
+        } catch (qualityErr) {
+          if (!isRetryableKnowledgeQualityError(qualityErr)) throw qualityErr;
+
+          update("Quality review request was rejected · retrying once with compact quality context...");
+
+          const compactBase = buildCompactKnowledgeQualityPrompt(
+            job,
+            job.knowledgeDraftAnswer
+          );
+          const compactPrompt = appendReuseMarker(compactBase, meta);
+
+          const submitCompact = await postFollowup(
+            job.caseNumber,
+            job.investigationId,
+            compactPrompt
+          );
+          const compactTaskId = submitCompact?.task_id;
+          if (!compactTaskId) {
+            throw new Error(`Compact knowledge quality retry did not return task_id after initial error: ${qualityErr?.message || qualityErr}`);
+          }
+
+          const directCompactId = extractFollowupId(submitCompact);
+          qualityFollowupId = directCompactId || await waitForFollowupId(
+            job.caseNumber,
+            job.investigationId,
+            compactTaskId,
+            compactPrompt,
+            update
+          );
+
+          job.knowledgeFollowupId = qualityFollowupId;
+          update(`Compact quality review Case Chat #${qualityFollowupId}`);
+
+          qualityRaw = await waitForFollowup(
+            job.caseNumber,
+            qualityFollowupId,
+            update
+          );
+        }
 
         let finalQualityRaw = qualityRaw;
         let parsed = parseKnowledgeQualityResponse(finalQualityRaw, job);
@@ -6777,6 +7586,10 @@ ${KNOWLEDGE_FINAL_DELIMITER}
           job.knowledgeQualityValidationItems =
             parsed.validationItems ||
             "Quality finalization requires human review before publication.";
+          job.knowledgeQualityIssues = [
+            ...(Array.isArray(parsed.issues) ? parsed.issues : []),
+            ...(parsed.reason ? [parsed.reason] : [])
+          ].map(cleanText).filter(Boolean);
         } else {
           job.knowledgeRawAnswer = finalQualityRaw;
           job.knowledgeAnswer = parsed.artifact;
@@ -6784,6 +7597,9 @@ ${KNOWLEDGE_FINAL_DELIMITER}
           job.knowledgeQualityStatus = parsed.status;
           job.knowledgeQualitySummary = parsed.summary || parsed.reason || "";
           job.knowledgeQualityValidationItems = parsed.validationItems;
+          job.knowledgeQualityIssues = Array.isArray(parsed.issues)
+            ? parsed.issues.map(cleanText).filter(Boolean)
+            : [];
         }
 
         job.knowledgeReuseStatus = job.forceKnowledgeRefresh ? "regenerated" : "generated";
@@ -6812,7 +7628,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
 
       const finalKnowledgeReadiness = normalizeDecision(job.validatedArtifactReadiness || job.artifactReadiness);
       showToast(
-        `${finalKnowledgeReadiness === "READY" ? "✓" : "⚠"} ${job.xsup} ${knowledgeArtifactLabel(job.knowledgeArtifactType)} ${job.knowledgeReuseStatus === "reused" ? "reused" : "generated"} · ${finalKnowledgeReadiness || "REVIEW"}`,
+        `${finalKnowledgeReadiness === "READY" ? "✓" : "⚠"} ${jobDisplayId(job)} ${knowledgeArtifactLabel(job.knowledgeArtifactType)} ${job.knowledgeReuseStatus === "reused" ? "reused" : "generated"} · ${finalKnowledgeReadiness || "REVIEW"}`,
         finalKnowledgeReadiness === "READY" ? "ok" : ""
       );
     } catch (err) {
@@ -6827,16 +7643,17 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         job.knowledgeAnswer = resolveRawProvenanceForHumanReview(job.knowledgeDraftAnswer);
         job.knowledgeRawAnswer = "";
         job.knowledgeError = `Quality finalization could not complete: ${err?.message || String(err)}. The enriched draft is preserved for human review.`;
-        job.knowledgeQualityStatus = "FAIL";
+        job.knowledgeQualityStatus = "QUALITY_REVIEW_ERROR";
         job.validatedArtifactReadiness = "NOT READY";
         job.knowledgeQualitySummary = job.knowledgeError;
+        job.knowledgeQualityIssues = [job.knowledgeError];
         if (!job.knowledgeQualityValidationItems) {
           job.knowledgeQualityValidationItems = "Quality finalization did not complete; human review is required before publication.";
         }
         job.knowledgeCompletedAt = Date.now();
         job.references = extractReferences(job.auditAnswer, job.knowledgeAnswer);
         await downloadKnowledgeArtifact(job, { auto: true });
-        showToast(`⚠ ${job.xsup} knowledge draft preserved · NOT READY`, "");
+        showToast(`⚠ ${jobDisplayId(job)} knowledge draft preserved · NOT READY`, "");
       } else {
         job.knowledgeStatus = "failed";
         job.knowledgeProgress = "generation failed · no usable draft";
@@ -6847,7 +7664,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         if (!job.knowledgeQualityStatus) job.knowledgeQualityStatus = "FAIL";
         if (!job.validatedArtifactReadiness) job.validatedArtifactReadiness = "NOT READY";
         if (!job.knowledgeQualitySummary) job.knowledgeQualitySummary = job.knowledgeError;
-        showToast(`⚠ ${job.xsup} knowledge generation failed before a usable draft was produced`, "error");
+        showToast(`⚠ ${jobDisplayId(job)} knowledge generation failed before a usable draft was produced`, "error");
       }
       job.knowledgeEndedAt = Date.now();
     } finally {
@@ -6955,7 +7772,21 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       return;
     }
 
-    const added = addJobsFromInput();
+    const added = addJobsFromInput("retrospective");
+    if (!added.length) return;
+
+    ensureBatchRuntime();
+    updateBatchStatus();
+    pumpQueue();
+  }
+
+  function runDirectKcs() {
+    if (state.stopped && state.activeCount > 0) {
+      setStatus("Finishing Stop All; wait a moment before starting a new batch.", "error");
+      return;
+    }
+
+    const added = addJobsFromInput("direct_kcs");
     if (!added.length) return;
 
     ensureBatchRuntime();
@@ -7077,7 +7908,9 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     job.knowledgeDraftFollowupId = null;
     job.knowledgeDraftCompletedAt = null;
     job.knowledgeDraftReuseStatus = "not_checked";
+    job.knowledgeDraftReviewIssues = [];
     job.knowledgeQualityStatus = "";
+    job.knowledgeQualityIssues = [];
     job.knowledgeQualitySummary = "";
     job.knowledgeQualityValidationItems = "";
     job.validatedArtifactReadiness = "";
@@ -7154,6 +7987,17 @@ pre{background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px;w
 .xa-decision-table{font-size:10px;background:#fff}
 .xa-decision-table th,.xa-decision-table td{padding:7px 8px}
 .xa-review-guide summary{font-weight:800}
+.xa-at-a-glance{margin:12px 0 18px;padding:10px 12px;border:1px solid #bfdbfe;border-left:4px solid #60a5fa;border-radius:9px;background:#f8fbff}
+.xa-at-a-glance-title{font-size:12px;font-weight:800;color:#1e40af;margin-bottom:4px}
+.xa-at-a-glance-body{font-size:13px;color:#334155;line-height:1.5}
+.xa-at-a-glance-body p{margin:0}
+.xa-at-a-glance-body p+p{margin-top:5px}
+.xa-publication-blocker{margin:12px 0 16px;padding:11px 13px;border:1px solid #fca5a5;border-left:5px solid #dc2626;border-radius:9px;background:#fef2f2;color:#7f1d1d}
+.xa-publication-blocker-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.xa-publication-blocker-title strong{font-size:12px;color:#991b1b}
+.xa-publication-blocker p{margin:5px 0 8px;font-size:12px;color:#7f1d1d}
+.xa-publication-blocker ul{margin:6px 0 0;padding-left:20px}
+.xa-publication-blocker li{margin:7px 0;font-size:12px;line-height:1.45;color:#7f1d1d}
 
 </style>
 </head>
@@ -7302,6 +8146,7 @@ ${bodyHtml}
   }
 
   async function maybeAutoSaveJob(job) {
+    if (isDirectKcsJob(job)) return;
     if (!state.autoSaveCompleted) return;
     if (!job?.auditAnswer || job.autoSaved) return;
 
@@ -7325,6 +8170,14 @@ ${bodyHtml}
     } else {
       articleHtml = `<div class="xa-title-line"><h1>${escapeHtml(knowledgeArtifactLabel(job.knowledgeArtifactType || knowledgeArtifactType(job)))}</h1>${statusBits}</div>${articleHtml}`;
     }
+
+    const blocker = knowledgeBlockingReviewHtml(job);
+    if (blocker) {
+      const titleEnd = articleHtml.indexOf("</div>");
+      articleHtml = titleEnd >= 0
+        ? articleHtml.slice(0, titleEnd + 6) + blocker + articleHtml.slice(titleEnd + 6)
+        : blocker + articleHtml;
+    }
     return articleHtml;
   }
 
@@ -7335,8 +8188,10 @@ ${bodyHtml}
         <div class="xa-meta-details-body">
           <table class="xa-detail-table">
             <tbody>
-              <tr><th>XSUP</th><td>${escapeHtml(job.xsup || "—")}</td></tr>
+              <tr><th>Source</th><td>${escapeHtml(knowledgeSourceLabel(job))}</td></tr>
+              <tr><th>Linked XSUP</th><td>${escapeHtml(realXsupForJob(job) || "—")}</td></tr>
               <tr><th>SFDC</th><td>${escapeHtml(job.caseNumber || "—")}</td></tr>
+              <tr><th>Workflow</th><td>${escapeHtml(isDirectKcsJob(job) ? "Direct KCS" : "Retrospective → Knowledge")}</td></tr>
               <tr><th>Product</th><td>${escapeHtml(productLabel(job))}</td></tr>
               <tr><th>Knowledge action</th><td>${escapeHtml(job.knowledgeAction || "—")}</td></tr>
               <tr><th>Artifact source</th><td>${escapeHtml(reuseStatusText(job.knowledgeReuseStatus))}${job.knowledgeFollowupId ? ` · Case Chat #${escapeHtml(job.knowledgeFollowupId)}` : ""}</td></tr>
@@ -7920,6 +8775,10 @@ ${bodyHtml}
           <h3>Where Case Chat is</h3>
           <p>The auditor automatically uses <b>TACopilot → Case → TACO Analysis → Case Chat</b>. Case Chat is available at the bottom of TACO Analysis after analysis exists. The user does not need to type the retrospective/knowledge prompts manually.</p>
 
+          <h3>Two entry workflows</h3>
+          <p><b>Run XSUP Retrospective</b> is the existing field-review workflow. It accepts XSUP IDs, reviews the product-specific Support-owned fields, and then generates Knowledge when applicable.</p>
+          <p><b>Generate KCS</b> accepts either an XSUP ID or an 8-digit SFDC case number. It resolves/reuses TACO, collects original Jira/SFDC evidence, then generates a KCS Draft and runs the same independent quality review, deterministic checks, optional one-time repair, and human-review boundary. It intentionally skips Resolution/RCA/Fix Type/Label retrospective review.</p>
+
           <h3>Products</h3>
           <p>One snippet supports <b>XDR/XSIAM, XSOAR and Cortex Cloud</b>. Product is detected from structured case/TACO metadata when reliable. Only high-confidence detection continues automatically; lower-confidence or conflicting detection pauses only that XSUP for reviewer confirmation.</p>
           <p>The selected product is shown in the Live Dashboard and XSUP detail. Before Retrospective Case Chat is submitted, the reviewer can change it. After the review starts/completes, changing product triggers a new retrospective/knowledge review while allowing current TACO/evidence to be reused when still current.</p>
@@ -7937,7 +8796,7 @@ ${bodyHtml}
 
           <h3>Knowledge quality workflow</h3>
           <p>When knowledge is recommended, the knowledge worker first creates an enriched draft using directly relevant source material actually available to the Case Chat/TACO investigation. A separate quality-review Case Chat then rewrites/finalizes the artifact using a common quality rubric plus an artifact-specific rubric for KCS, documentation updates, runbooks or known issues/release notes.</p>
-          <p>The final gate checks usefulness, completeness, actionability, generalization, evidence support, source relevance, consistency, readability, discoverability, audience fit and verification. Material validation items downgrade the final artifact to <b>DRAFTABLE</b>; unsafe/incomplete artifacts are marked <b>NOT READY</b> and are not downloaded as final knowledge.</p>
+          <p>The final gate checks usefulness, completeness, actionability, generalization, evidence support, source relevance, consistency, readability, discoverability, audience fit and verification. Material validation items downgrade the final artifact to <b>DRAFTABLE</b>. A usable draft with a material blocker is preserved as <b>NOT READY</b> with a visible review-required explanation; only a true generation failure with no usable draft is treated as failed.</p>
 
           <h3>Smart reuse</h3>
           <p>Before creating another Audit or final Knowledge Case Chat, the auditor checks existing follow-up history. Reuse requires matching current inputs/method. The selected product and product policy are part of the audit fingerprint, so a product change cannot accidentally reuse another product's retrospective.</p>
@@ -7973,7 +8832,7 @@ ${bodyHtml}
       #xsup-auditor-panel *{box-sizing:border-box}
       .xa-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.xa-title{font-size:18px;font-weight:750}.xa-sub{margin-top:3px;font-size:11px;color:#6b7280}.xa-head-actions{display:flex;align-items:center;gap:2px}.xa-icon{border:0;background:transparent;color:#6b7280;cursor:pointer}.xa-head-actions .xa-icon{width:34px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:7px;font-size:18px;transition:background .12s ease,transform .12s ease}.xa-head-actions .xa-icon:hover{background:#f3f4f6}.xa-head-actions .xa-icon:active{transform:scale(.94)}
       .xa-semantic-chip,.xa-review-chip{display:inline-flex;align-items:center;gap:3px;border-radius:999px;padding:2px 6px;font-size:9.5px;font-weight:800;line-height:1.35;white-space:nowrap;vertical-align:middle;border:1px solid transparent;cursor:help}.xa-semantic-green,.xa-review-green{background:#dcfce7;color:#065f46;border-color:#86efac}.xa-semantic-amber,.xa-review-amber{background:#fef3c7;color:#92400e;border-color:#fcd34d}.xa-semantic-purple,.xa-review-purple{background:#ede9fe;color:#6d28d9;border-color:#c4b5fd}.xa-semantic-red,.xa-review-red{background:#fee2e2;color:#991b1b;border-color:#fca5a5}.xa-semantic-blue,.xa-review-blue{background:#dbeafe;color:#1d4ed8;border-color:#93c5fd}.xa-semantic-gray,.xa-review-gray{background:#f8fafc;color:#64748b;border-color:#e2e8f0}.xa-review-chip{margin-left:4px}.xa-review-footer{margin-top:10px}.xa-review-footer details{margin:6px 0;border:1px solid #e5e7eb;border-radius:8px;background:#fafafa}.xa-review-footer summary{cursor:pointer;padding:6px 8px;font-size:9px;font-weight:800;color:#475569}.xa-review-details-body,.xa-quality-details-body,.xa-review-guide-body{padding:0 8px 8px;font-size:9px;line-height:1.45}.xa-review-item-list{padding-left:18px;margin:4px 0}.xa-review-item-list li{margin:6px 0}.xa-review-validation-summary{margin-top:6px;padding:6px 8px;border-left:3px solid #f59e0b;background:#fffbeb;border-radius:5px}.xa-review-validation-summary p{margin:3px 0 0}.xa-review-guide-table-wrap{overflow:auto}.xa-review-guide-table{width:100%;border-collapse:collapse;font-size:10px}.xa-review-guide-table th,.xa-review-guide-table td{text-align:left;vertical-align:top;padding:5px;border-bottom:1px solid #e5e7eb}.xa-review-guide-table th{color:#475569;background:#f8fafc}.xa-review-count{font-size:8.5px;color:#92400e;font-weight:800}
-      .xa-input-row{display:grid;grid-template-columns:1fr auto auto;gap:8px;margin-top:14px;align-items:stretch}#xsup-auditor-input{min-height:64px;max-height:130px;resize:vertical;border:1px solid #d1d5db;border-radius:9px;padding:9px 11px;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}#xsup-auditor-run{border:0;border-radius:8px;padding:10px 14px;background:#4f46e5;color:#fff;font-weight:700;cursor:pointer}#xsup-auditor-stop{border:0;border-radius:8px;padding:10px 12px;background:#dc2626;color:#fff;font-weight:700;cursor:pointer}#xsup-auditor-run:disabled,#xsup-auditor-stop:disabled{opacity:.55;cursor:not-allowed}
+      .xa-input-row{display:grid;grid-template-columns:1fr auto auto auto;gap:8px;margin-top:14px;align-items:stretch}#xsup-auditor-input{min-height:64px;max-height:130px;resize:vertical;border:1px solid #d1d5db;border-radius:9px;padding:9px 11px;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}#xsup-auditor-run,#xsup-auditor-generate-kcs{border:0;border-radius:8px;padding:10px 14px;background:#4f46e5;color:#fff;font-weight:700;cursor:pointer}#xsup-auditor-generate-kcs{background:#0f766e}#xsup-auditor-stop{border:0;border-radius:8px;padding:10px 12px;background:#dc2626;color:#fff;font-weight:700;cursor:pointer}#xsup-auditor-run:disabled,#xsup-auditor-generate-kcs:disabled,#xsup-auditor-stop:disabled{opacity:.55;cursor:not-allowed}
       .xa-input-help{margin-top:5px;font-size:10px;color:#6b7280}.xa-toggle-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.xa-auto-download{display:flex;align-items:flex-start;gap:8px;margin-top:0;padding:8px 10px;border:1px solid #e5e7eb;border-radius:9px;background:#fafafa;cursor:pointer}.xa-auto-download input{margin-top:2px}.xa-auto-download span{display:flex;flex-direction:column;gap:2px}.xa-auto-download strong{font-size:11px}.xa-auto-download small{font-size:9px;color:#6b7280;line-height:1.35}.xa-status{margin-top:10px;padding:9px 10px;background:#f3f4f6;border-radius:8px;font-size:12px}.xa-status[data-kind="ok"]{background:#ecfdf5;color:#065f46}.xa-status[data-kind="error"]{background:#fef2f2;color:#991b1b}
       .xa-workspace{display:grid;grid-template-columns:220px minmax(0,1fr);gap:12px;margin-top:12px}.xa-sidebar{border:1px solid #e5e7eb;border-radius:11px;background:#fafafa;overflow:hidden;align-self:start;position:sticky;top:0}.xa-side-head{display:flex;align-items:center;justify-content:space-between;padding:9px 10px;border-bottom:1px solid #e5e7eb;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}.xa-side-head span:last-child{font-weight:600;color:#6b7280;text-transform:none;letter-spacing:0}.xa-job-list{max-height:62vh;overflow:auto;padding:6px}.xa-job-empty{padding:12px 8px;color:#6b7280;font-size:11px;line-height:1.5}.xa-job{width:100%;display:flex;gap:8px;align-items:flex-start;border:1px solid transparent;background:transparent;border-radius:9px;padding:8px;text-align:left;cursor:pointer;margin-bottom:4px}.xa-job:hover{background:#f3f4f6}.xa-job-selected{background:#eef2ff!important;border-color:#c7d2fe}.xa-job-icon{width:18px;text-align:center;font-weight:800;line-height:18px}.xa-job-main{min-width:0;display:flex;flex-direction:column;gap:1px;flex:1}.xa-job-main strong{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.xa-job-main em{font-size:10px;font-style:normal;color:#4b5563;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.xa-job-main small{font-size:9px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.xa-job-completed .xa-job-icon{color:#047857}.xa-job-failed .xa-job-icon{color:#b91c1c}.xa-job-running .xa-job-icon{color:#4f46e5}.xa-job-stopped .xa-job-icon{color:#6b7280}
       .xa-detail{min-width:0}.xa-detail-empty{border:1px dashed #d1d5db;border-radius:11px;padding:38px 20px;text-align:center;color:#6b7280;font-size:12px}.xa-selected-title{font-size:14px;font-weight:800;margin:1px 0 4px}
@@ -8003,7 +8862,7 @@ ${bodyHtml}
     panel.innerHTML = `
       <div class="xa-head">
         <div>
-          <div class="xa-title">XSUP Retrospective Auditor</div>
+          <div class="xa-title">XSUP Auditor &amp; KCS Generator</div>
           <div class="xa-sub">v${VERSION} · XDR/XSIAM · XSOAR · Cortex Cloud · ${state.concurrency} audit workers · ${state.knowledgeConcurrency} knowledge worker<span id="xsup-auditor-elapsed"></span></div>
         </div>
         <div class="xa-head-actions">
@@ -8014,11 +8873,12 @@ ${bodyHtml}
       </div>
 
       <div class="xa-input-row">
-        <textarea id="xsup-auditor-input" placeholder="Paste one or more XSUP IDs&#10;XSUP-72446&#10;XSUP-81234"></textarea>
-        <button id="xsup-auditor-run">Run Audit(s)</button>
+        <textarea id="xsup-auditor-input" placeholder="Retrospective: XSUP IDs only&#10;Direct KCS: XSUP or SFDC case&#10;XSUP-72446&#10;04005807"></textarea>
+        <button id="xsup-auditor-run">Run XSUP Retrospective</button>
+        <button id="xsup-auditor-generate-kcs" title="Generate a KCS directly from an XSUP or SFDC case. Skips the retrospective field-review prompt but keeps TACO freshness, original evidence, quality review, deterministic checks and human review.">Generate KCS</button>
         <button id="xsup-auditor-stop" disabled>Stop All</button>
       </div>
-      <div class="xa-input-help">IDs may be separated by spaces, commas or new lines. Duplicate IDs are removed. Up to 2 XSUP reviews run at once; queued XSUPs start automatically. Knowledge drafts run one at a time.</div>
+      <div class="xa-input-help"><b>Run XSUP Retrospective:</b> enter XSUP IDs. <b>Generate KCS:</b> enter XSUP IDs or 8-digit SFDC case numbers. IDs may be separated by spaces, commas or new lines. Direct KCS skips Resolution/RCA/Fix Type/Label review and goes straight through the full KCS quality pipeline.</div>
       <div class="xa-toggle-row">
         <label class="xa-auto-download">
           <input id="xsup-auditor-auto-download" type="checkbox" checked>
@@ -8050,11 +8910,11 @@ ${bodyHtml}
 
       <div class="xa-workspace">
         <aside class="xa-sidebar">
-          <div class="xa-side-head"><span>XSUP Queue</span><span>2 workers</span></div>
+          <div class="xa-side-head"><span>Case Queue</span><span>2 workers</span></div>
           <button id="xsup-auditor-dashboard-btn" class="xa-dashboard-btn">▦ Live Dashboard</button>
           <div style="padding:2px 8px 4px;color:#6b7280;font-size:9px;line-height:1.35">Click any XSUP to view its progress, report, comment and references.</div>
           <div id="xsup-auditor-job-list" class="xa-job-list">
-            <div class="xa-job-empty">Paste one or more XSUP IDs above and click Run Audit(s).</div>
+            <div class="xa-job-empty">Enter XSUP IDs for retrospective review, or XSUP/SFDC case numbers for direct KCS generation.</div>
           </div>
           <div class="xa-actions" style="padding:0 8px 8px;margin-top:2px">
             <button id="xsup-auditor-copy-all-comments" title="Copies the review paste comments for every completed ticket in this batch.">Copy All Review Comments</button>
@@ -8073,7 +8933,7 @@ ${bodyHtml}
           <div id="xsup-auditor-dashboard"></div>
 
           <div id="xsup-auditor-detail-empty" class="xa-detail-empty" style="display:none">
-            Select an XSUP from the queue to view its progress and audit.
+            Select a case from the queue to view its progress, audit/KCS status and evidence.
           </div>
 
           <div id="xsup-auditor-detail-content" style="display:none">
@@ -8098,16 +8958,16 @@ ${bodyHtml}
             <div class="xa-section-title">Linked SFDC Case Details</div>
             <div id="xsup-auditor-sfdc-details"><div class="xa-ref-empty">SFDC mapping details will appear after XSUP resolution.</div></div>
 
-            <div class="xa-section-title">Audit Report</div>
+            <div id="xsup-auditor-audit-report-title" class="xa-section-title">Audit Report</div>
             <div id="xsup-auditor-output" class="xa-report-empty"><div class="xa-report-placeholder">Final audit report will appear here...</div></div>
-            <div class="xa-actions">
+            <div id="xsup-auditor-audit-report-actions" class="xa-actions">
               <button id="xsup-auditor-copy">Copy Audit Report</button>
               <button id="xsup-auditor-download-selected" disabled title="Downloads the selected XSUP audit, or writes it to the selected folder.">Download Audit Report</button>
             </div>
 
-            <div class="xa-section-title">Review Paste Comment</div>
+            <div id="xsup-auditor-review-comment-title" class="xa-section-title">Review Paste Comment</div>
             <textarea id="xsup-auditor-xsup-comment" placeholder="Review paste comment will appear here..."></textarea>
-            <div class="xa-actions">
+            <div id="xsup-auditor-review-comment-actions" class="xa-actions">
               <button id="xsup-auditor-copy-comment">Copy Review Comment</button>
             </div>
 
@@ -8176,6 +9036,7 @@ ${bodyHtml}
     document.getElementById("xsup-auditor-choose-folder").onclick = chooseSaveFolder;
 
     document.getElementById("xsup-auditor-run").onclick = runAudit;
+    document.getElementById("xsup-auditor-generate-kcs").onclick = runDirectKcs;
     document.getElementById("xsup-auditor-stop").onclick = stopAudit;
     document.getElementById("xsup-auditor-minimize").onclick = minimizePanel;
     document.getElementById("xsup-auditor-maximize").onclick = toggleMaximize;
@@ -8236,7 +9097,15 @@ ${bodyHtml}
     document.getElementById("xsup-auditor-debug").onclick = () => void downloadDebug();
 
     document.getElementById("xsup-auditor-input").addEventListener("keydown", e => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") runAudit();
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "Enter") {
+        e.preventDefault();
+        runDirectKcs();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        runAudit();
+      }
     });
   }
 

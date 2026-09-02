@@ -181,7 +181,7 @@ TBD
 [placeholder ...]
 ```
 
-The article is not considered final enough for normal Knowledge download.
+The article is not publication-ready. When a usable draft exists, it is preserved and can still be downloaded for review.
 
 ---
 
@@ -316,3 +316,37 @@ Verify:
 7. Quality Summary / Validation Items
 
 Then choose a targeted Regenerate action only when appropriate.
+
+---
+
+# Bookmark does not run
+
+1. Confirm the simple bookmarklet test works on the TACopilot page.
+2. Confirm the bookmark URL still starts with `javascript:`.
+3. Confirm TACopilot is the active page when the bookmark is clicked.
+4. If the installer drag operation fails, use **Copy bookmark URL** and create the bookmark manually.
+5. If managed-browser policy blocks bookmark execution, use the approved DevTools Snippet method instead. Do not bypass corporate controls.
+
+# Generate KCS does not show a retrospective Audit
+
+Expected behavior.
+
+Direct KCS intentionally skips retrospective eligibility and Support-owned field review. It should show the retrospective stage as skipped/not applicable and proceed to the KCS quality pipeline.
+
+# Quality review request is rejected / 422
+
+The current workflow performs one compact quality retry automatically.
+
+If both quality requests fail but an enriched draft exists:
+
+- the draft is preserved;
+- readiness becomes **NOT READY**;
+- a red **REVIEW REQUIRED** section explains what/why;
+- internal quality execution can show `QUALITY_REVIEW_ERROR`;
+- this is not the same as a substantive AI quality `FAIL`.
+
+# NOT READY draft can still be downloaded
+
+Expected behavior when a usable artifact exists.
+
+NOT READY means **blocked for publication**, not **discard the draft**. The draft remains available so the reviewer can resolve the highlighted issues.

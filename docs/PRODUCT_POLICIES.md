@@ -135,3 +135,19 @@ Changing product:
 - re-evaluates Audit/Knowledge
 - can reuse current TACO if still valid
 - prevents accidentally reusing another product profile's retrospective
+
+---
+
+# Direct Generate KCS and product policy
+
+The product profiles above govern **retrospective eligibility and Support-owned field review**.
+
+The **Generate KCS** workflow is different:
+
+- it may start from an XSUP or SFDC case;
+- it still detects/confirms product context;
+- it does not evaluate the retrospective trigger;
+- it does not review Resolution/RCA/Fix Type/Flag/Label;
+- it sends the case directly to KCS generation and the common Knowledge quality pipeline.
+
+Therefore an XSUP/SFDC case can be useful for direct KCS generation even when it is not being processed as a retrospective candidate.

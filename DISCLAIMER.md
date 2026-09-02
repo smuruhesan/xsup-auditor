@@ -1,6 +1,6 @@
 # Disclaimer & Internal Use
 
-XSUP Retrospective Auditor is an internal APAC Cortex TAC decision-support tool.
+XSUP Auditor & KCS Generator is an internal APAC Cortex TAC decision-support tool.
 
 It does not replace reviewer judgment.
 

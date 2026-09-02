@@ -1,6 +1,6 @@
 # FAQ
 
-## What is XSUP Retrospective Auditor?
+## What is XSUP Auditor & KCS Generator?
 
 A Chrome DevTools Snippet that coordinates TACopilot, TACO Analysis, Jira/SFDC evidence and Case Chat to help reviewers complete product-specific XSUP retrospective reviews and generate reusable Knowledge drafts.
 
@@ -452,3 +452,53 @@ Check:
 6. Audit decision
 7. Knowledge quality/readiness
 8. Validation Items
+
+---
+
+# Installation / launch
+
+## What is the recommended way to run the tool?
+
+Use `dist/XSUP_Auditor_Bookmark_Installer.html` and drag **XSUP Auditor** to the Chrome bookmarks bar.
+
+If drag-and-drop fails, use the installer's **Copy bookmark URL** button and manually create a bookmark whose URL is the copied `javascript:` value.
+
+## What is the fallback if bookmark execution is unavailable?
+
+Use the canonical `src/xsup-auditor.js` or copy-friendly `dist/XSUP_Auditor_JS.txt` as a Chrome DevTools Snippet.
+
+## Does the bookmark load code from an external website?
+
+No. The distributed bookmark is self-contained and runs only on the intended TACopilot page context. Managed-browser/security policies still apply.
+
+# Direct Generate KCS
+
+## Can I generate a KCS without running an XSUP retrospective?
+
+Yes. Click **Generate KCS** and enter either an XSUP ID or an 8-digit SFDC case number.
+
+The tool skips the retrospective Support-owned field review and goes directly through TACO/evidence → KCS generation → quality review → deterministic checks → optional repair → human review.
+
+## Does direct Generate KCS decide whether the case should be an Admin Guide, Runbook or Known Issue instead?
+
+No. The button expresses explicit user intent. Direct mode sets `CREATE KCS` and produces a KCS Draft.
+
+Artifact-type classification is performed only in the retrospective workflow, where the Retrospective Audit prompt chooses the primary Knowledge action using its explicit Knowledge Decision rubric.
+
+## How does retrospective mode choose the Knowledge type?
+
+The Audit prompt chooses among:
+
+- CREATE KCS
+- UPDATE EXISTING KCS
+- UPDATE ADMIN/TECH GUIDE
+- CREATE/UPDATE RUNBOOK
+- KNOWN ISSUE/RELEASE NOTE
+- NO KNOWLEDGE ACTION
+- UNDETERMINED
+
+It considers whether the reusable value is a repeatable Support resolution, an existing-KCS gap, administrator/product-behavior documentation, an internal investigation workflow, a version-specific defect/limitation, or no material reusable gap.
+
+## What happens if the independent Knowledge quality request is rejected?
+
+The tool retries once using a compact quality-review prompt. If quality still cannot complete but the enriched draft is usable, the draft is preserved as **NOT READY** with a visible review-required explanation. That is a quality-review execution error, not proof that the AI substantively judged the technical article to be wrong.

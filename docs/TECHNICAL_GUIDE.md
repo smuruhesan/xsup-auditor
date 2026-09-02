@@ -1,6 +1,6 @@
 # Technical Guide
 
-This document describes the architecture and maintenance contracts of XSUP Retrospective Auditor v1.
+This document describes the architecture and maintenance contracts of XSUP Auditor & KCS Generator v1.
 
 ---
 
@@ -431,3 +431,70 @@ Preserve:
 16. substantive AI FAIL is not automatically overridden
 17. deterministic gate runs after repair
 18. final Knowledge remains a draft for human review
+
+---
+
+# Current distribution model
+
+The canonical source is:
+
+```text
+src/xsup-auditor.js
+```
+
+Supported user launch methods are:
+
+1. self-contained bookmark installed from `dist/XSUP_Auditor_Bookmark_Installer.html`;
+2. Chrome DevTools Snippet using `src/xsup-auditor.js` or `dist/XSUP_Auditor_JS.txt`.
+
+Both run the same source logic inside the authenticated TACopilot page context. No external JavaScript hosting is required for the bookmark distribution.
+
+# Two orchestration modes
+
+## Retrospective mode
+
+```text
+XSUP → SFDC → product → TACO/evidence → Retrospective Audit → Knowledge Decision → optional Knowledge pipeline
+```
+
+## Direct KCS mode
+
+```text
+XSUP or SFDC → product/context → TACO/evidence → KCS Draft → Quality pipeline
+```
+
+Direct KCS creates a job with `workflowMode = direct_kcs`, skips the retrospective Case Chat, sets `knowledgeAction = CREATE KCS`, `knowledgeArtifactType = KCS_DRAFT`, and queues the common Knowledge worker.
+
+# Knowledge-action classification contract
+
+Artifact classification exists in the Retrospective Audit prompt, not as a standalone JavaScript keyword classifier.
+
+The prompt selection contract is:
+
+| Action | Prompt meaning |
+|---|---|
+| CREATE KCS | repeatable symptom → check → confirm → resolution/workaround → verify pattern |
+| UPDATE EXISTING KCS | relevant existing KCS materially lacks needed resolution content |
+| UPDATE ADMIN/TECH GUIDE | official behavior/configuration/expectation needs administrator/customer documentation clarity |
+| CREATE/UPDATE RUNBOOK | reusable value is an internal investigation/evidence workflow rather than a complete resolution article |
+| KNOWN ISSUE/RELEASE NOTE | version-specific defect/limitation belongs in issue/release communication |
+| NO KNOWLEDGE ACTION | no material reusable gap |
+| UNDETERMINED | insufficient evidence to choose safely |
+
+JavaScript parses the returned `Primary Knowledge Action` and maps it deterministically to `KCS_DRAFT`, `KCS_UPDATE`, `DOC_UPDATE`, `RUNBOOK`, or `KNOWN_ISSUE`.
+
+Direct KCS bypasses this classification and deliberately selects `CREATE KCS`.
+
+# Direct-KCS quality safeguards
+
+The direct KCS path uses the same Knowledge quality engine as retrospective-generated Knowledge.
+
+Additional current safeguards include:
+
+- preliminary inline review markers during first-pass draft generation;
+- exact commands/APIs/UI paths/timings/versions/architecture/configuration treated as high-risk factual claims requiring source/review support;
+- one compact quality retry when the normal quality-review request is rejected;
+- deterministic checks for required sections, At a Glance, raw source/provenance markup, placeholders, references and readiness consistency;
+- one evidence-bounded repair pass for safe generic defects;
+- `QUALITY_REVIEW_ERROR` when quality execution cannot complete but a usable draft is preserved;
+- `NOT READY` remains a reviewable/downloadable draft state; `failed` is reserved for no usable artifact.
