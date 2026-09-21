@@ -2123,8 +2123,16 @@ CORTEX CLOUD RETROSPECTIVE POLICY
     const latestStatus = String(latest?.status || "").toLowerCase();
     const status = progressStatus || latestStatus;
     const progressValue = Number(progress?.overall_progress);
-    const progressLooksActive = Number.isFinite(progressValue) && progressValue >= 0 && progressValue < 100 && status !== "completed";
-    const activeStatus = [progressStatus, latestStatus].find(isActiveTacoStatus) || "";
+    const progressLooksActive = Number.isFinite(progressValue) && progressValue >= 0 && progressValue < 100 && progressStatus !== "completed";
+    // The per-investigation progress endpoint is the more specific state source.
+    // TACopilot's investigation-list endpoint can lag behind it (for example,
+    // list status=running while progress status=completed and a final report exists).
+    // Never let that stale list flag reopen the hard TACO barrier after progress
+    // has already reported a terminal state. Fall back to list status only when
+    // progress does not expose a status at all.
+    const activeStatus = isActiveTacoStatus(progressStatus)
+      ? progressStatus
+      : (!progressStatus && isActiveTacoStatus(latestStatus) ? latestStatus : "");
     // Prefer the report's own generation/completion timestamp for freshness.
     // Progress/list timestamps can move independently of the synthesized report.
     const tacoTimestamp = timestampFromObject(report) || timestampFromObject(progress, latest);
@@ -5410,11 +5418,19 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       const outer = classifyCaseChatFollowup(item);
       if (type === "audit") {
         if (outer !== "audit") continue;
-        const auditMarker = parseReuseMarker(q);
-        if (!auditMarker || auditMarker.schema !== AUDIT_REUSE_SCHEMA) continue;
+        // Cross-version Audit reuse intentionally does NOT require the historical
+        // prompt marker to use the current AUDIT_REUSE_SCHEMA. Older Auditor
+        // releases used earlier schema IDs even when the underlying Jira/SFDC
+        // evidence, selected product and substantive retrospective answer remain
+        // source-current. Validate the answer itself instead of rejecting it only
+        // because the generating build was older. This restores the proven v2.4.31
+        // reuse contract while keeping the current structural/knowledge checks.
         const validation = validateSourceCurrentAuditAnswer(item.answer, job);
         if (validation.valid) return {...item, source_current_skipped: skipped};
-        if (validation.transient) skipped.push({id:item.id, reason:"temporary system error"});
+        skipped.push({
+          id: item.id,
+          reason: validation.transient ? "temporary system error" : validation.reason
+        });
         continue;
       }
 
@@ -5883,33 +5899,26 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     return /Failed to fetch|NetworkError|Load failed|network request failed|connection.*reset|temporarily unavailable|timeout|CSRF|HTTP 403|HTTP 408|HTTP 425|HTTP 429|HTTP 5\d\d|task failed|task rejected|service error|service unavailable|temporary system error/i.test(message);
   }
 
-  async function submitFollowupResilient(caseNumber, investigationId, question, onProgress = null, label = "Case Chat") {
+  async function submitFollowupResilient(caseNumber, investigationId, question, onProgress = null) {
     try {
       return await postFollowup(caseNumber, investigationId, question);
     } catch (err) {
       if (err?.name === "AbortError" || !isRetryableCaseChatSubmissionError(err)) throw err;
 
-      onProgress?.(`${label} submission connection interrupted · checking whether TACopilot accepted it...`);
+      onProgress?.("Case Chat submission connection interrupted · checking whether TACopilot accepted it...");
       try {
         await sleep(1000);
         const history = await getFollowupHistory(caseNumber, investigationId);
         const recoveredId = findFollowupInHistory(history, question);
         if (recoveredId) {
-          onProgress?.(`Recovered accepted ${label} #${recoveredId} from history.`);
+          onProgress?.(`Recovered accepted Case Chat #${recoveredId} from history.`);
           return { followup_id: recoveredId, recovered_from_history: true };
         }
       } catch (_) {}
 
-      onProgress?.(`${label} request was not confirmed as accepted · retrying submission once...`);
+      onProgress?.("No accepted matching Case Chat found · retrying submission once...");
       await sleep(1500);
-      try {
-        return await postFollowup(caseNumber, investigationId, question);
-      } catch (retryErr) {
-        if (retryErr?.name === "AbortError") throw retryErr;
-        retryErr.xaSubmissionNotAccepted = true;
-        retryErr.xaCaseChatLabel = label;
-        throw retryErr;
-      }
+      return await postFollowup(caseNumber, investigationId, question);
     }
   }
 
@@ -5944,20 +5953,17 @@ ${KNOWLEDGE_FINAL_DELIMITER}
 
     for (let attempt = 1; attempt <= (retryOnce ? 2 : 1); attempt++) {
       try {
-        if (attempt > 1) onProgress?.(`${label} automatic retry attempt 1/1 · submitting a fresh task...`);
         const submit = await submitFollowupResilient(
           caseNumber,
           investigationId,
           question,
-          onProgress,
-          label
+          onProgress
         );
         const directId = extractFollowupId(submit);
         const taskId = submit?.task_id;
         if (!directId && !taskId) {
           throw new Error(`${label} did not return task_id or followup_id.`);
         }
-        if (!directId && taskId) onProgress?.(`${label} task ${taskId} accepted · waiting for Case Chat creation...`);
 
         const followupId = directId || await waitForFollowupId(
           caseNumber,
@@ -5979,22 +5985,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       } catch (err) {
         if (err?.name === "AbortError") throw err;
         lastError = err;
-        if (attempt >= (retryOnce ? 2 : 1) || !isRetryableCaseChatGenerationError(err)) {
-          if (err?.xaSubmissionNotAccepted) {
-            const finalErr = new Error(`${label} submission failed; no Case Chat was confirmed as created. ${cleanText(err?.message || "")}`.trim());
-            finalErr.name = "CaseChatSubmissionNotAcceptedError";
-            finalErr.xaSubmissionNotAccepted = true;
-            throw finalErr;
-          }
-          if (err?.xaTaskRejectedBeforeFollowup) {
-            const finalErr = new Error(`${label} task was rejected before a Case Chat was created${err?.xaTaskId ? ` (task ${err.xaTaskId})` : ""}. ${cleanText(err?.message || "")}`.trim());
-            finalErr.name = "CaseChatTaskRejectedBeforeFollowupError";
-            finalErr.xaTaskRejectedBeforeFollowup = true;
-            finalErr.xaTaskId = err?.xaTaskId || null;
-            throw finalErr;
-          }
-          throw err;
-        }
+        if (attempt >= (retryOnce ? 2 : 1) || !isRetryableCaseChatGenerationError(err)) throw err;
 
         // Before retrying, recover an exact accepted prompt from history when it
         // produced a usable answer. Temporary-error answers are deliberately not
@@ -6011,16 +6002,8 @@ ${KNOWLEDGE_FINAL_DELIMITER}
           }
         } catch (_) {}
 
-        if (err?.xaSubmissionNotAccepted) {
-          onProgress?.(`${label} submission was not accepted · no Case Chat was confirmed as created · automatic retry 1/1...`);
-        } else if (err?.xaTaskRejectedBeforeFollowup) {
-          onProgress?.(`${label} task was rejected before Case Chat creation${err?.xaTaskId ? ` · task ${err.xaTaskId}` : ""} · automatic retry 1/1...`);
-        } else if (err?.followupId) {
-          onProgress?.(`${label} #${err.followupId} returned a temporary error · automatic retry 1/1...`);
-        } else {
-          onProgress?.(`${label} generation temporarily failed after submission · automatic retry 1/1...`);
-        }
-        await sleep(err?.xaTaskRejectedBeforeFollowup ? 5000 : 1800);
+        onProgress?.(`Temporary ${label} failure · automatic retry 1/1...`);
+        await sleep(1800);
       }
     }
 
@@ -6151,11 +6134,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       }
 
       if (j?.success === false || j?.error) {
-        const taskErr = new Error(`Case Chat task rejected before a follow-up was created: ${j?.error || "unknown service error"}`);
-        taskErr.name = "CaseChatTaskRejectedBeforeFollowupError";
-        taskErr.xaTaskRejectedBeforeFollowup = true;
-        taskErr.xaTaskId = taskId;
-        throw taskErr;
+        throw new Error(`Case Chat task rejected: ${j?.error || "unknown service error"}`);
       }
 
       const id = extractFollowupId(j);
@@ -6165,15 +6144,11 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       const status = String(d?.status || j?.status || "").toLowerCase();
 
       if (status === "failed" || status === "error") {
-        const taskErr = new Error(
+        throw new Error(
           d?.error_message ||
           j?.error_message ||
-          "Case Chat task failed before a follow-up was created."
+          "Case Chat task failed."
         );
-        taskErr.name = "CaseChatTaskRejectedBeforeFollowupError";
-        taskErr.xaTaskRejectedBeforeFollowup = true;
-        taskErr.xaTaskId = taskId;
-        throw taskErr;
       }
 
       // Fallback: TACopilot exposes follow-up history for the investigation.
