@@ -2,7 +2,7 @@
 
 **Internal APAC Cortex TAC decision-support and Knowledge-generation tool**
 
-**Current release: v3** · build `github-v3`
+**Release: Initial Team Release**
 
 XSUP Auditor & KCS Generator is a self-contained browser tool that runs inside TACopilot using the reviewer's existing authenticated session.
 
@@ -27,15 +27,15 @@ The tool coordinates TACopilot, TACO Analysis, original Jira/SFDC evidence and C
 
 Use the self-contained installer:
 
-[**⬇ Download XSUP Auditor Bookmark Installer**](dist/XSUP_Auditor_Bookmark_Installer.html)
+[**⬇ Download XSUP Auditor Bookmark Installer**](dist/XSUP_Auditor_Bookmark_Installer.html?raw=1)
 
 1. Open the HTML file locally in Chrome.
 2. Show the bookmarks bar (`Cmd + Shift + B` on macOS; `Ctrl + Shift + B` on Windows/Linux).
-3. Drag the green **XSUP Auditor v3** button to the bookmarks bar.
+3. Drag the green **XSUP Auditor** button to the bookmarks bar.
 4. Open any authenticated TACO page under `https://taco.paloaltonetworks.com:3009/taco/`.
-5. Click the **XSUP Auditor v3** bookmark.
+5. Click the **XSUP Auditor** bookmark.
 
-The Auditor can be launched from [TACO Pilot](https://taco.paloaltonetworks.com:3009/taco/pilot/) homepage or any sub pages within the URL https://taco.paloaltonetworks.com:3009/taco/pilot/.
+The Auditor can be launched from TACO Pilot, an individual case page such as `/taco/case/03744225`, or another authenticated page under the same `/taco/` path tree. The exact origin/port is enforced; unrelated hosts and lookalike paths are rejected.
 
 ### If dragging the bookmark fails
 
@@ -82,8 +82,8 @@ See the [User Guide](docs/USER_GUIDE.md) for detailed setup and usage.
 Input:
 
 ```text
-XSUP-12345
-XSUP-56789
+XSUP-72446
+XSUP-81234
 ```
 
 Flow:
@@ -120,13 +120,13 @@ The retrospective decides which Support-owned fields are applicable and which Kn
 Input can be either:
 
 ```text
-XSUP-12345
+XSUP-72446
 ```
 
 or:
 
 ```text
-04000001
+04005807
 ```
 
 Flow:
@@ -269,12 +269,9 @@ Both retrospective-generated Knowledge and direct KCS use the same quality engin
 Knowledge basis
  ↓
 1. Generate enriched draft
-   + preliminary inline review markers
  ↓
 2. Independent AI quality review
-   ├─ if request is rejected (for example a 422):
-   │    retry once with compact quality context
-   ↓
+ ↓
 3. Deterministic JavaScript checks
  ↓
 4. One evidence-bounded repair pass when appropriate
@@ -286,24 +283,21 @@ READY / DRAFTABLE / NOT READY
 Human review
 ```
 
-The system checks accuracy, usefulness, completeness, actionability, generalization, technical depth, source quality, consistency, readability, discoverability, audience fit, verification and publication boundaries.
+The normal path uses two substantive Knowledge prompts: generation and independent quality review. TACopilot/Case Chat transport may retry or recover transient request failures, but that is reliability handling rather than an additional quality stage. A single repair prompt may be used when the identified issue is safe to repair from the evidence already available.
 
-It also makes uncertainty visible with inline review markers such as:
+The quality workflow checks accuracy, usefulness, completeness, actionability, generalization, technical depth, source quality, consistency, readability, discoverability, audience fit, verification, source freshness/applicability, source conflicts, anti-circularity, and publication boundaries.
 
-- `⚠ SME REVIEW`
-- `⚙ ENGINEERING REVIEW`
-- `◇ INFERENCE`
-- `🔎 SOURCE CHECK`
-- `🧭 SCOPE CHECK`
-- `ℹ RECOMMENDATION`
-- `✓ CONFIRMED`
-- `✕ UNSUPPORTED`
+When validation is still required, the final artifact marks the affected claim/reference directly with one of these visible states:
 
-Every artifact requires an **At a Glance** summary near the top.
+- `⚠ REVIEW`
+- `⚠ REVIEW CURRENTNESS`
+- `✕ BLOCKER`
+
+Each callout identifies the review type, what needs review, why it matters, the relevant source reference(s), and the required outcome. Review types include UI navigation, CLI command, API contract, timing/SLA, file/log path, source currentness, missing source/link, derivative AI evidence, internal architecture, documentation placement, citation gap, and other material validation.
+
+Every generated Knowledge artifact includes an **At a Glance** summary near the top.
 
 See [Knowledge Quality](docs/KNOWLEDGE_QUALITY.md).
-
----
 
 # Knowledge readiness
 
@@ -385,6 +379,12 @@ A qualified reviewer remains responsible for:
 
 ---
 
+## Release identity
+
+This is the **initial team release**. The tested runtime retains internal engineering identifiers `VERSION = 3` and `BUILD_ID = github-v3` for traceability across saved sessions, debug data, and release QA. Those identifiers are not the user-facing release name.
+
+---
+
 # Repository layout
 
 ```text
@@ -396,6 +396,9 @@ src/
 dist/
   XSUP_Auditor_Bookmark_Installer.html
   XSUP_Auditor_JS.txt
+tests/
+  test_direct_kcs_primary.js
+  test_taco_url_scope.js
 docs/
   USER_GUIDE.md
   FAQ.md
@@ -405,7 +408,6 @@ docs/
   VALIDATION_CHECKLIST.md
   TROUBLESHOOTING.md
   SECURITY_AND_USAGE.md
-  kcs-quality-overview.png
 ```
 
 ---

@@ -295,7 +295,7 @@ Confirm:
 # Bookmark distribution
 
 - [ ] installer HTML opens locally
-- [ ] green XSUP Auditor v3 link can be dragged to bookmarks when browser permits
+- [ ] green XSUP Auditor link can be dragged to bookmarks when browser permits
 - [ ] Copy bookmark URL fallback works
 - [ ] manually created bookmark retains `javascript:` prefix
 - [ ] bookmark runs from `/taco/pilot/`
@@ -354,16 +354,18 @@ Test cases for each prompt outcome:
 
 # Current Knowledge quality fallback
 
-- [ ] generation prompt adds preliminary review markers for unsupported high-risk claims
-- [ ] normal quality prompt succeeds
-- [ ] simulated retryable quality rejection triggers one compact quality retry
-- [ ] compact retry is attempted only once
-- [ ] usable draft preserved when quality still cannot complete
-- [ ] preserved draft status is NOT READY
-- [ ] internal status can be QUALITY_REVIEW_ERROR
-- [ ] QUALITY_REVIEW_ERROR is not mislabeled as substantive AI FAIL
-- [ ] Review Required section shows What to review and Why
+- [ ] generation prompt requires material unsupported details to be omitted or explicitly marked for TAC/SME validation
+- [ ] independent quality prompt succeeds and returns only `PASS`, `PASS_WITH_VALIDATION`, or `FAIL`
+- [ ] quality output can emit structured `REVIEW` / `BLOCKER` items using only allowed review kinds
+- [ ] `SOURCE_CURRENTNESS` renders as **REVIEW CURRENTNESS**
+- [ ] deterministic checks can add/normalize review items for source, timing, citation, derivative-AI and other material validation concerns
+- [ ] one evidence-bounded repair pass is used only for safe/repairable issues
+- [ ] transient Case Chat transport recovery does not create a fake quality verdict
+- [ ] usable draft is preserved when independent quality validation still cannot complete
+- [ ] preserved artifact exposes internal `VALIDATION UNAVAILABLE` and remains review-required
+- [ ] `VALIDATION UNAVAILABLE` is not mislabeled as substantive AI `FAIL`
+- [ ] inline callouts identify Review type, What, Why, required Outcome/action and source references when available
 - [ ] review-item count includes quality/deterministic/article validation items consistently
 - [ ] raw `<ref>`, verification-warning or equivalent source/provenance markup is not exposed in final human-facing content
 - [ ] NOT READY usable draft remains downloadable/reviewable
-- [ ] failed reserved for no usable artifact
+- [ ] failed is reserved for no usable artifact

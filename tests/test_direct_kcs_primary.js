@@ -1,6 +1,6 @@
 const fs = require("fs");
 const path = require("path");
-const sourcePath = process.argv[2] || path.join(__dirname, "..", "XSUP_Auditor_v3.js");
+const sourcePath = process.argv[2] || path.join(__dirname, "..", "src", "xsup-auditor.js");
 const src = fs.readFileSync(sourcePath, "utf8");
 const startNeedle = "const primaryResultSatisfiesRequest = result => {";
 const start = src.indexOf(startNeedle);

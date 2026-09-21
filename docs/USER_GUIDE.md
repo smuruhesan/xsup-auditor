@@ -24,9 +24,9 @@ dist/XSUP_Auditor_Bookmark_Installer.html
 1. Open `XSUP_Auditor_Bookmark_Installer.html` locally in Chrome.
 2. Show the Chrome bookmarks bar:
    - macOS: `Cmd + Shift + B`
-3. Drag the green **XSUP Auditor v3** button onto the bookmarks bar.
+3. Drag the green **XSUP Auditor** button onto the bookmarks bar.
 4. Open any authenticated page under `https://taco.paloaltonetworks.com:3009/taco/`.
-5. Click the **XSUP Auditor v3** bookmark.
+5. Click the **XSUP Auditor** bookmark.
 
 Supported launch examples include TACO Pilot and individual case pages such as `https://taco.paloaltonetworks.com:3009/taco/case/03744225`. The bookmark accepts only the exact TACO origin/port and the `/taco` path tree.
 
@@ -322,12 +322,8 @@ Once Knowledge generation starts, retrospective mode and direct KCS mode use the
 
 ```text
 1. Generate enriched draft
-   + preliminary inline markers
         ↓
 2. Independent quality review
-        ↓
-   if quality request is rejected:
-   one compact quality retry
         ↓
 3. Deterministic JavaScript checks
         ↓
@@ -338,20 +334,29 @@ Once Knowledge generation starts, retrospective mode and direct KCS mode use the
 READY / DRAFTABLE / NOT READY
 ```
 
-Every artifact requires **At a Glance** near the top.
+The normal path uses two substantive Knowledge prompts: generation and independent quality review. Transient Case Chat transport failures can be retried/recovered by the reliability layer without creating a separate quality stage. One evidence-bounded repair prompt may be used when the problem can be repaired safely from the evidence already available.
 
-## Inline review markers
+Every generated Knowledge artifact includes **At a Glance** near the top.
 
-- **⚠ SME REVIEW** — product behavior, UI path, timing, configuration or operational detail needs validation
-- **⚙ ENGINEERING REVIEW** — backend/API/architecture/implementation claim needs Engineering confirmation
-- **◇ INFERENCE** — derived but not directly established
-- **🔎 SOURCE CHECK** — needs a stronger/direct source
-- **🧭 SCOPE CHECK** — version/platform/tenant/applicability needs confirmation
-- **ℹ RECOMMENDATION** — guidance/best practice rather than mandatory behavior
-- **✓ CONFIRMED** — important claim directly supported
-- **✕ UNSUPPORTED** — material claim lacks sufficient support
+## Inline review and blocker markers
 
-The generator is instructed to add preliminary markers even before the independent quality stage so a usable draft remains reviewable if the quality request itself fails.
+The final artifact uses three reader-facing marker states:
+
+- **⚠ REVIEW** — a material claim or reference needs validation before authoritative reuse/publication.
+- **⚠ REVIEW CURRENTNESS** — historical, version-specific, case-specific, or otherwise non-current evidence materially supports a reusable claim and its current applicability needs confirmation.
+- **✕ BLOCKER** — a material publication blocker remains.
+
+The callout beside the affected claim/reference explains:
+
+- the **Review type**;
+- **What** needs review;
+- the relevant **Source(s)** / `[R#]` references;
+- **Why** the issue matters;
+- the required **Outcome / action**.
+
+Review types include `UI_NAVIGATION`, `CLI_COMMAND`, `API_CONTRACT`, `TIMING_SLA`, `FILE_LOG_PATH`, `SOURCE_CURRENTNESS`, `MISSING_SOURCE_OR_LINK`, `DERIVATIVE_AI_EVIDENCE`, `INTERNAL_ARCHITECTURE`, `DOCUMENTATION_PLACEMENT`, `CITATION_GAP`, and `OTHER_MATERIAL_VALIDATION`.
+
+Source References can also show source-state indicators such as **✕ BLOCKER SOURCE**, **⚠ REVIEW CURRENTNESS**, or a current/maintained state.
 
 ---
 
@@ -359,39 +364,29 @@ The generator is instructed to add preliminary markers even before the independe
 
 ## READY
 
-Useful/materially complete; no material unresolved validation item identified by the quality workflow.
+Useful/materially complete; the automated quality workflow has not identified a material unresolved validation item.
+
+READY still requires the normal human editorial/publication review.
 
 ## DRAFTABLE
 
-Useful draft; one or more named material review items remain.
+A useful draft exists, but one or more named material review items remain.
 
 ## NOT READY
 
-A usable draft exists but a material blocker remains.
+A usable draft exists but a material blocker remains, or independent quality validation could not be completed safely.
 
-The draft is preserved and displays:
-
-```text
-✕ REVIEW REQUIRED
-
-What to review:
-...
-
-Why:
-...
-```
-
-NOT READY is not the same as execution failure.
+The draft is preserved with visible validation guidance. NOT READY is not the same as execution failure.
 
 ## Failed Knowledge job
 
-`failed` is reserved for cases where no usable artifact could be generated/preserved.
+`failed` is reserved for technical execution problems where no usable artifact can be generated or preserved.
 
-## Quality review execution error
+## Quality validation unavailable
 
-If independent quality Case Chat is rejected, the tool retries once using a compact quality prompt. If quality still cannot complete but an enriched draft exists, the draft is preserved as **NOT READY** and the internal state is recorded as a quality-review execution error rather than pretending the AI judged the article itself to be a substantive quality FAIL. The diagnostic internal status is `QUALITY_REVIEW_ERROR`.
+If the independent quality stage is temporarily unavailable but a usable enriched draft exists, the artifact is preserved conservatively for review. The internal quality status can show **`VALIDATION UNAVAILABLE`** and the publication state remains review-required rather than pretending that the independent quality reviewer returned a substantive `FAIL`.
 
----
+Re-run the quality/generation workflow or perform the required human validation before publication.
 
 # 10. Analysis & Reuse Status
 

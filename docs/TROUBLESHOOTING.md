@@ -19,7 +19,7 @@ Run the Snippet again.
 ---
 # Bookmark does not open from a case page
 
-v3 supports any authenticated page under:
+The current release supports any authenticated page under:
 
 ```text
 https://taco.paloaltonetworks.com:3009/taco/
@@ -127,13 +127,15 @@ For a normal retrospective it requires:
 For **Direct Generate KCS**, a retrospective Audit is not required. Direct KCS regeneration uses current TACO/original evidence and the KCS-family artifact state.
 
 ---
-# Direct KCS created an Update Proposal but the dashboard says Knowledge failed
+# Direct KCS created an Update Proposal
 
-That was a v2.4.40 aggregate-state defect: the direct request started as CREATE/KCS Draft, legitimately reconciled to UPDATE/KCS Update after inspecting existing Knowledge, then the parent completion check compared the final route to the original request too strictly.
+This is valid behavior in **Direct Generate KCS**.
 
-v3 treats a valid Direct KCS Draft **or** valid Existing KCS Update Proposal as satisfying the required Direct KCS primary. Normal retrospective Audit-led routing remains strict.
+Direct KCS starts with `CREATE KCS / KCS_DRAFT` intent, inspects actual Salesforce KCS content, and can legitimately reconcile to `UPDATE EXISTING KCS / KCS_UPDATE` when a material same-scope match is established. A valid KCS Draft **or** a valid KCS Update Proposal satisfies the required Direct KCS primary.
 
-If you still see the old failure text, reinstall the v3 bookmark.
+Normal retrospective mode remains different: the validated Audit owns the Knowledge destination and downstream generation must not silently reroute an Audit-selected CREATE into UPDATE.
+
+If an installed bookmark behaves differently from the current repository documentation, replace/reinstall the bookmark because self-contained bookmarks keep the source bytes that were embedded when they were installed.
 
 ---
 
@@ -143,7 +145,7 @@ This is not necessarily a failure.
 
 It means the artifact is useful but has named material validation items.
 
-Review the Validation section.
+Review the inline **REVIEW / REVIEW CURRENTNESS** callouts beside the affected claims/references and resolve the stated required action.
 
 ---
 
@@ -153,11 +155,12 @@ The artifact failed an important quality/safety condition.
 
 Review:
 
-- Quality Summary
-- Validation Items
-- source evidence
-- deterministic issue
-- Case Chat result
+- the header readiness/publication state
+- inline **REVIEW / REVIEW CURRENTNESS / BLOCKER** callouts
+- Source References and source-state indicators
+- the affected claim/reference
+- the stated What / Why / required action
+- Case Chat result only as diagnostic context, not as the authoritative underlying source
 
 ---
 
@@ -336,7 +339,7 @@ Verify:
 4. original Engineering evidence
 5. original SFDC evidence
 6. Audit decision
-7. Quality Summary / Validation Items
+7. inline REVIEW / REVIEW CURRENTNESS / BLOCKER callouts and Source References
 
 Then choose a targeted Regenerate action only when appropriate.
 
@@ -356,17 +359,19 @@ Expected behavior.
 
 Direct KCS intentionally skips retrospective eligibility and Support-owned field review. It should show the retrospective stage as skipped/not applicable and proceed to the KCS quality pipeline.
 
-# Quality review request is rejected / 422
+# Independent quality validation is unavailable
 
-The current workflow performs one compact quality retry automatically.
+Transient Case Chat request failures can be retried/recovered by the shared reliability layer.
 
-If both quality requests fail but an enriched draft exists:
+If independent quality validation still cannot complete but an enriched draft exists:
 
-- the draft is preserved;
-- readiness becomes **NOT READY**;
-- a red **REVIEW REQUIRED** section explains what/why;
-- internal quality execution can show `QUALITY_REVIEW_ERROR`;
-- this is not the same as a substantive AI quality `FAIL`.
+- the usable draft is preserved;
+- the internal quality state can show **`VALIDATION UNAVAILABLE`**;
+- the artifact is kept in a conservative review-required state;
+- the validation notice explains that independent quality validation was unavailable;
+- this is an execution-state warning, not proof that the article received a substantive AI quality `FAIL`.
+
+Re-run the Knowledge workflow or complete the required validation manually before publication.
 
 # NOT READY draft can still be downloaded
 

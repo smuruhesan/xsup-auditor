@@ -1,6 +1,8 @@
 # Technical Guide
 
-This document describes the architecture and maintenance contracts of XSUP Auditor & KCS Generator v3 (`github-v3`).
+This document describes the architecture and maintenance contracts of XSUP Auditor & KCS Generator.
+
+**Release identity:** this is the initial team release. The tested runtime intentionally retains internal engineering identifiers `VERSION = 3` and `BUILD_ID = github-v3` for traceability.
 
 ---
 
@@ -222,7 +224,7 @@ Rules:
 
 1. do not simply delete the marker
 2. source/rewrite when underlying evidence supports the claim
-3. move uncertain material into Validation Items when useful
+3. convert material uncertainty into structured inline REVIEW/BLOCKER items tied to the affected claim/reference
 4. remove unsafe/unnecessary unsupported claims
 5. never convert inference into fact by deleting a marker
 
@@ -499,12 +501,16 @@ Direct KCS bypasses Admin Guide/Runbook/Known Issue classification and remains K
 
 The direct KCS path uses the same Knowledge quality engine as retrospective-generated Knowledge.
 
-Additional current safeguards include:
+Current safeguards include:
 
-- preliminary inline review markers during first-pass draft generation;
-- exact commands/APIs/UI paths/timings/versions/architecture/configuration treated as high-risk factual claims requiring source/review support;
-- one compact quality retry when the normal quality-review request is rejected;
-- deterministic checks for required sections, At a Glance, raw source/provenance markup, placeholders, references and readiness consistency;
-- one evidence-bounded repair pass for safe generic defects;
-- `QUALITY_REVIEW_ERROR` when quality execution cannot complete but a usable draft is preserved;
-- `NOT READY` remains a reviewable/downloadable draft state; `failed` is reserved for no usable artifact.
+- exact commands, APIs, UI paths, timing values, version/scope statements, architecture details and configuration treated as material claims that require source/review support;
+- an independent quality prompt after draft generation;
+- structured quality output using `PASS`, `PASS_WITH_VALIDATION`, or `FAIL`;
+- formal inline `REVIEW` / `BLOCKER` items with typed categories such as `TIMING_SLA`, `SOURCE_CURRENTNESS`, `API_CONTRACT`, and `CITATION_GAP`;
+- deterministic checks for structure, At a Glance, source/reference integrity, internal provenance leakage, placeholders, review-item consistency and readiness;
+- one evidence-bounded repair pass for safe, repairable quality/structure issues;
+- source freshness/applicability and anti-circularity checks so generated/TACO/Case Chat synthesis is not accepted as sole authority for a material reusable claim;
+- `VALIDATION UNAVAILABLE` as the conservative internal fallback when independent quality execution cannot complete but a usable draft is preserved;
+- `NOT READY` remains a reviewable/downloadable artifact state; `failed` is reserved for cases where no usable artifact can be preserved.
+
+Transient Case Chat request failures may be retried or recovered by the shared reliability layer. That transport behavior is not documented as a separate Knowledge-quality prompt or quality verdict.

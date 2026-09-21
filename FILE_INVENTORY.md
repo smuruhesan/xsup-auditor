@@ -9,7 +9,9 @@ This repository contains the browser source, bookmark distribution, and document
 | `SUPPORT.md` | Support/triage guidance for this repository |
 | `src/xsup-auditor.js` | Canonical JavaScript source |
 | `dist/XSUP_Auditor_JS.txt` | Copy-friendly source for managed browsers that block `.js` downloads |
-| `dist/XSUP_Auditor_Bookmark_Installer.html` | Self-contained v3 bookmark installer with Cortex-green drag-to-bookmarks button and Copy Bookmark URL fallback |
+| `dist/XSUP_Auditor_Bookmark_Installer.html` | Self-contained bookmark installer with Cortex-green drag-to-bookmarks button and Copy Bookmark URL fallback |
+| `tests/test_direct_kcs_primary.js` | Regression checks for Direct KCS required-primary completion and strict retrospective routing |
+| `tests/test_taco_url_scope.js` | Regression checks for supported `/taco` launch scope and rejected origin/path lookalikes |
 | `docs/USER_GUIDE.md` | Installation and daily operating guide for Retrospective and direct Generate KCS modes |
 | `docs/FAQ.md` | Common usage, status, reuse, Knowledge and security questions |
 | `docs/PRODUCT_POLICIES.md` | XDR/XSIAM, XSOAR and Cortex Cloud retrospective policies |
@@ -18,4 +20,3 @@ This repository contains the browser source, bookmark distribution, and document
 | `docs/VALIDATION_CHECKLIST.md` | Functional and safety validation checklist |
 | `docs/TROUBLESHOOTING.md` | Common execution, TACO, Case Chat, bookmark and Knowledge troubleshooting |
 | `docs/SECURITY_AND_USAGE.md` | Data, storage, browser-control and GitHub safety guidance |
-| `docs/kcs-quality-overview.png` | Knowledge quality workflow overview image |

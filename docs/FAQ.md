@@ -342,22 +342,24 @@ Examples:
 - correct source XSUP
 - XSUP/SFDC not in reusable Search Keywords
 - Source References identify underlying sources
-- Validation Items and readiness agree
+- structured review/blocker items and readiness agree
 
 ---
 
 ## What KCS sections are required by the deterministic gate?
 
-For a new KCS Draft:
+A new KCS Draft uses an **adaptive** structure rather than one fixed troubleshooting template.
 
-- Symptoms / Error
-- Cause
-- How to Check
-- How to Confirm
-- Resolution / Fix
-- Source References
+The deterministic gate requires these content roles:
 
-Useful additional sections can include Applies To, How to Verify, Additional Troubleshooting, Expected Behavior / Limitations, Search Keywords and Validation Items.
+- an **Introduction / Overview** role;
+- an **issue / symptom / task context** role;
+- a **substantive explanation, action or procedure** role appropriate to the article type;
+- **Source References**.
+
+The exact headings can vary with the problem type. For example, a troubleshooting article may use Symptoms, Diagnosis, Resolution and Verification, while a how-to/configuration article may use Task/Goal, Prerequisites, Procedure and Verification.
+
+Useful additional sections can include Applies To / Environment, Background / What It Means, If the Issue Persists, Expected Behavior / Limitations, Related Knowledge / Documentation and Search Keywords. Material validation requirements appear as inline **REVIEW / REVIEW CURRENTNESS / BLOCKER** callouts rather than a separate bottom validation inventory.
 
 ---
 
@@ -449,7 +451,7 @@ Check:
 5. Analysis & Reuse Status
 6. Audit decision
 7. Knowledge quality/readiness
-8. Validation Items
+8. inline review/blocker callouts and Source References
 
 ---
 
@@ -457,7 +459,7 @@ Check:
 
 ## What is the recommended way to run the tool?
 
-Use `dist/XSUP_Auditor_Bookmark_Installer.html` and drag the green **XSUP Auditor v3** button to the Chrome bookmarks bar. Reinstall/replace the bookmark after each release because the source is embedded in the bookmark itself.
+Use `dist/XSUP_Auditor_Bookmark_Installer.html` and drag the green **XSUP Auditor** button to the Chrome bookmarks bar. Reinstall/replace the bookmark after each release because the source is embedded in the bookmark itself.
 
 If drag-and-drop fails, use the installer's **Copy bookmark URL** button and manually create a bookmark whose URL is the copied `javascript:` value.
 
@@ -503,6 +505,10 @@ The Audit prompt chooses among:
 
 It considers whether the reusable value is a repeatable Support resolution, an existing-KCS gap, administrator/product-behavior documentation, an internal investigation workflow, a version-specific defect/limitation, or no material reusable gap.
 
-## What happens if the independent Knowledge quality request is rejected?
+## What happens if the independent Knowledge quality stage is temporarily unavailable?
 
-The tool retries once using a compact quality-review prompt. If quality still cannot complete but the enriched draft is usable, the draft is preserved as **NOT READY** with a visible review-required explanation. That is a quality-review execution error, not proof that the AI substantively judged the technical article to be wrong.
+Transient Case Chat request failures are handled by the workflow's bounded transport/recovery logic. This is reliability handling; it is not a separate "compact quality" stage.
+
+If independent quality validation still cannot complete but a usable enriched draft exists, the draft is preserved conservatively for review rather than discarded. The internal quality status can show **`VALIDATION UNAVAILABLE`**, and the artifact remains review-required until the quality stage is rerun successfully or the required validation is completed manually.
+
+This is an execution-state warning, not proof that the article's technical content received a substantive quality `FAIL`.
