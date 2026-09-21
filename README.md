@@ -27,7 +27,7 @@ The tool coordinates TACopilot, TACO Analysis, original Jira/SFDC evidence and C
 
 Use the self-contained installer:
 
-[**⬇ Download XSUP Auditor Bookmark Installer**](dist/XSUP_Auditor_Bookmark_Installer.html?raw=1)
+[**⬇ Download XSUP Auditor Bookmark Installer**](dist/XSUP_Auditor_Bookmark_Installer.html)
 
 1. Open the HTML file locally in Chrome.
 2. Show the bookmarks bar (`Cmd + Shift + B` on macOS; `Ctrl + Shift + B` on Windows/Linux).
@@ -35,7 +35,7 @@ Use the self-contained installer:
 4. Open any authenticated TACO page under `https://taco.paloaltonetworks.com:3009/taco/`.
 5. Click the **XSUP Auditor** bookmark.
 
-The Auditor can be launched from TACO Pilot, an individual case page such as `/taco/case/03744225`, or another authenticated page under the same `/taco/` path tree. The exact origin/port is enforced; unrelated hosts and lookalike paths are rejected.
+The Auditor should be launched when you are at [TACO Pilot](https://taco.paloaltonetworks.com:3009/taco/).
 
 ### If dragging the bookmark fails
 
@@ -82,8 +82,8 @@ See the [User Guide](docs/USER_GUIDE.md) for detailed setup and usage.
 Input:
 
 ```text
-XSUP-72446
-XSUP-81234
+XSUP-12345
+XSUP-56789
 ```
 
 Flow:
@@ -120,13 +120,13 @@ The retrospective decides which Support-owned fields are applicable and which Kn
 Input can be either:
 
 ```text
-XSUP-72446
+XSUP-12345
 ```
 
 or:
 
 ```text
-04005807
+04000001
 ```
 
 Flow:
