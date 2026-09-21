@@ -35,7 +35,7 @@ Use the self-contained installer:
 4. Open any authenticated TACO page under `https://taco.paloaltonetworks.com:3009/taco/`.
 5. Click the **XSUP Auditor v3** bookmark.
 
-The Auditor can be launched from TACO Pilot, an individual case page such as `/taco/case/03744225`, or another authenticated page under the same `/taco/` path tree. The exact origin/port is enforced; unrelated hosts and lookalike paths are rejected.
+The Auditor can be launched from TACO Pilot[TACO Pilot](https://taco.paloaltonetworks.com:3009/taco/pilot/) homepage or any sub pages within the URL https://taco.paloaltonetworks.com:3009/taco/pilot/.
 
 ### If dragging the bookmark fails
 
