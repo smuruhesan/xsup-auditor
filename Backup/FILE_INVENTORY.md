@@ -7,9 +7,10 @@ This repository contains the browser source, bookmark distribution, and document
 | `README.md` | Project overview, Quick Start, workflows, Knowledge classification and safety boundaries |
 | `DISCLAIMER.md` | Internal-use and review disclaimer |
 | `SUPPORT.md` | Support/triage guidance for this repository |
+| `.gitignore` | Helps prevent case-derived reports, session exports and local diagnostics from being committed |
 | `src/xsup-auditor.js` | Canonical JavaScript source |
 | `dist/XSUP_Auditor_JS.txt` | Copy-friendly source for managed browsers that block `.js` downloads |
-| `dist/XSUP_Auditor_Bookmark_Installer.html` | Self-contained v3 bookmark installer with Cortex-green drag-to-bookmarks button and Copy Bookmark URL fallback |
+| `dist/XSUP_Auditor_Bookmark_Installer.html` | Self-contained bookmark installer with drag-to-bookmarks and Copy Bookmark URL fallback |
 | `docs/USER_GUIDE.md` | Installation and daily operating guide for Retrospective and direct Generate KCS modes |
 | `docs/FAQ.md` | Common usage, status, reuse, Knowledge and security questions |
 | `docs/PRODUCT_POLICIES.md` | XDR/XSIAM, XSOAR and Cortex Cloud retrospective policies |

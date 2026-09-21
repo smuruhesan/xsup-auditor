@@ -24,11 +24,11 @@ dist/XSUP_Auditor_Bookmark_Installer.html
 1. Open `XSUP_Auditor_Bookmark_Installer.html` locally in Chrome.
 2. Show the Chrome bookmarks bar:
    - macOS: `Cmd + Shift + B`
-3. Drag the green **XSUP Auditor v3** button onto the bookmarks bar.
-4. Open any authenticated page under `https://taco.paloaltonetworks.com:3009/taco/`.
-5. Click the **XSUP Auditor v3** bookmark.
+3. Drag the blue **XSUP Auditor** button onto the bookmarks bar.
+4. Open TACopilot.
+5. Click the **XSUP Auditor** bookmark.
 
-Supported launch examples include TACO Pilot and individual case pages such as `https://taco.paloaltonetworks.com:3009/taco/case/03744225`. The bookmark accepts only the exact TACO origin/port and the `/taco` path tree.
+The Auditor opens on the current TACopilot page.
 
 ### If drag-and-drop fails
 
@@ -45,13 +45,11 @@ XSUP Auditor
 
 5. Paste the copied value into the **URL** field.
 6. Save the bookmark.
-7. Open any authenticated page under `https://taco.paloaltonetworks.com:3009/taco/` and click it.
+7. Open TACopilot and click it.
 
 ### Important
 
 The bookmark is self-contained. It does not fetch the Auditor from GitHub, TACopilot backend storage or an external JavaScript host.
-
-Because the source is embedded in the bookmark, **existing installed bookmarks do not auto-update**. After a new release, delete/replace the old bookmark and drag the current installer button again.
 
 If managed Chrome blocks bookmarklets by policy, do not attempt to bypass the policy. Use Option 2 if permitted.
 
@@ -225,11 +223,16 @@ The JavaScript does not independently guess the artifact using simple keywords. 
 
 Direct KCS mode is intentionally simpler.
 
-When you click **Generate KCS**, the tool treats the request as **KCS-family intent**. It does **not** ask the retrospective prompt to choose Admin Guide vs KCS vs Runbook vs Known Issue.
+When you click **Generate KCS**, the tool assumes the requested Knowledge type is a KCS.
 
-The direct workflow begins as `CREATE KCS / KCS_DRAFT`, then inspects the actual content of available Salesforce KCS candidates. If one materially covers the same issue and can be extended, Direct Generate KCS may return `UPDATE EXISTING KCS / KCS_UPDATE` instead.
+It sets:
 
-This reconciliation is based on same-scope content comparison, not title/keyword similarity. If candidate content is unavailable, the tool keeps a new KCS draft and surfaces a REVIEW rather than guessing an update target. If UPDATE is recommended, the reviewer can still choose **Create New KCS Anyway**; the new article should reference the overlapping KCS.
+```text
+Primary Knowledge Action: CREATE KCS
+Artifact Type: KCS Draft
+```
+
+It does **not** ask the retrospective prompt to choose Admin Guide vs KCS vs Runbook vs Known Issue.
 
 ## Direct KCS flow
 
@@ -246,9 +249,7 @@ Reuse / wait / refresh TACO when required
  ↓
 Collect original Jira/SFDC evidence
  ↓
-Inspect available existing Salesforce KCS content
- ↓
-Create KCS Draft OR Existing KCS Update Proposal
+Generate KCS Draft
  ↓
 Independent Quality Review
  ↓
@@ -447,17 +448,14 @@ Direct KCS includes its workflow mode in Knowledge reuse identity so it does not
 
 # 13. Concurrency
 
-- **XSUP/TACO workers:** default 2; selectable 2 / 3 / 5 / 10
-- **Knowledge workers:** 2
-- **Shared Case Chat generation cap:** 2 mutating generations across Audit + Knowledge
+- up to **2** case/audit workers
+- **1** Knowledge worker
 
-The higher XSUP/TACO setting affects independent evidence/TACO processing; it does not increase the Case Chat generation cap.
+Knowledge generation can continue while the case/audit queue advances.
 
 ---
 
 # 14. Reports and downloads
-
-With **Auto-save/request completed artifacts** enabled (default), normal retrospective flow requests the Audit HTML first. Only after that request is initiated does downstream Audit-selected Knowledge generation start. Completed Knowledge artifacts then request standalone HTML downloads. Direct KCS mode has no retrospective Audit download.
 
 Outputs can include:
 

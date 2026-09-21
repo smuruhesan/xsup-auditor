@@ -2,7 +2,7 @@
 
 ## What is XSUP Auditor & KCS Generator?
 
-A self-contained browser tool/bookmarklet (with a Chrome DevTools Snippet fallback) that coordinates TACopilot, TACO Analysis, Jira/SFDC evidence and Case Chat to help reviewers complete product-specific XSUP retrospective reviews and generate reusable Knowledge drafts.
+A Chrome DevTools Snippet that coordinates TACopilot, TACO Analysis, Jira/SFDC evidence and Case Chat to help reviewers complete product-specific XSUP retrospective reviews and generate reusable Knowledge drafts.
 
 ---
 
@@ -106,15 +106,17 @@ or:
 
 ## How many XSUPs can run simultaneously?
 
-XSUP/TACO concurrency defaults to **2** and can be selected as **2, 3, 5 or 10**. This controls independent case/evidence/TACO work.
+Two Audit jobs.
 
-Mutating Case Chat generation remains capped at **2** across Audit and Knowledge.
+Additional jobs queue automatically.
 
 ---
 
 ## How many Knowledge jobs run simultaneously?
 
-Up to **2 Knowledge workers** can prepare/reuse artifacts in parallel. Audit and Knowledge share a hard cap of **2 active Case Chat generations**.
+One Knowledge job.
+
+Audit workers can continue independently.
 
 ---
 
@@ -457,7 +459,7 @@ Check:
 
 ## What is the recommended way to run the tool?
 
-Use `dist/XSUP_Auditor_Bookmark_Installer.html` and drag the green **XSUP Auditor v3** button to the Chrome bookmarks bar. Reinstall/replace the bookmark after each release because the source is embedded in the bookmark itself.
+Use `dist/XSUP_Auditor_Bookmark_Installer.html` and drag **XSUP Auditor** to the Chrome bookmarks bar.
 
 If drag-and-drop fails, use the installer's **Copy bookmark URL** button and manually create a bookmark whose URL is the copied `javascript:` value.
 
@@ -465,13 +467,9 @@ If drag-and-drop fails, use the installer's **Copy bookmark URL** button and man
 
 Use the canonical `src/xsup-auditor.js` or copy-friendly `dist/XSUP_Auditor_JS.txt` as a Chrome DevTools Snippet.
 
-## Where can I launch the bookmark?
-
-From any authenticated TACO page under `https://taco.paloaltonetworks.com:3009/taco/`, including TACO Pilot and individual case pages. It intentionally rejects different origins/ports and lookalike paths outside the `/taco` tree.
-
 ## Does the bookmark load code from an external website?
 
-No. The distributed bookmark is self-contained. It runs only on the exact origin `https://taco.paloaltonetworks.com:3009` and paths under `/taco` (for example `/taco/pilot/` or `/taco/case/03744225`). Managed-browser/security policies still apply.
+No. The distributed bookmark is self-contained and runs only on the intended TACopilot page context. Managed-browser/security policies still apply.
 
 # Direct Generate KCS
 
@@ -483,11 +481,9 @@ The tool skips the retrospective Support-owned field review and goes directly th
 
 ## Does direct Generate KCS decide whether the case should be an Admin Guide, Runbook or Known Issue instead?
 
-No. Direct mode remains **KCS-family-only**; it does not switch to Admin Guide, Runbook or Known Issue.
+No. The button expresses explicit user intent. Direct mode sets `CREATE KCS` and produces a KCS Draft.
 
-It starts as `CREATE KCS / KCS_DRAFT`, inspects the actual content of available Salesforce KCS candidates, and may reconcile to `UPDATE EXISTING KCS / KCS_UPDATE` when one article materially covers the same issue and can be extended. If candidate content cannot be validated, it keeps a new draft and surfaces a REVIEW rather than guessing.
-
-If UPDATE is recommended, **Create New KCS Anyway** remains available. The normal retrospective workflow is different: its validated Audit owns the Knowledge destination and downstream generation must not silently reroute CREATE↔UPDATE.
+Artifact-type classification is performed only in the retrospective workflow, where the Retrospective Audit prompt chooses the primary Knowledge action using its explicit Knowledge Decision rubric.
 
 ## How does retrospective mode choose the Knowledge type?
 

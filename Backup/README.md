@@ -2,8 +2,6 @@
 
 **Internal APAC Cortex TAC decision-support and Knowledge-generation tool**
 
-**Current release: v3** · build `github-v3`
-
 XSUP Auditor & KCS Generator is a self-contained browser tool that runs inside TACopilot using the reviewer's existing authenticated session.
 
 It has two entry workflows:
@@ -27,15 +25,15 @@ The tool coordinates TACopilot, TACO Analysis, original Jira/SFDC evidence and C
 
 Use the self-contained installer:
 
-[**⬇ Download XSUP Auditor Bookmark Installer**](dist/XSUP_Auditor_Bookmark_Installer.html?raw=1)
+[**⬇ Download XSUP Auditor Bookmark Installer**](https://github.com/smuruhesan/xsup-auditor/releases/download/v1.0.0/XSUP_Auditor_Bookmark_Installer.html)
 
 1. Open the HTML file locally in Chrome.
 2. Show the bookmarks bar (`Cmd + Shift + B` on macOS; `Ctrl + Shift + B` on Windows/Linux).
-3. Drag the green **XSUP Auditor v3** button to the bookmarks bar.
-4. Open any authenticated TACO page under `https://taco.paloaltonetworks.com:3009/taco/`.
-5. Click the **XSUP Auditor v3** bookmark.
+3. Drag the blue **XSUP Auditor** button to the bookmarks bar.
+4. Open TACopilot.
+5. Click the **XSUP Auditor** bookmark.
 
-The Auditor can be launched from TACO Pilot, an individual case page such as `/taco/case/03744225`, or another authenticated page under the same `/taco/` path tree. The exact origin/port is enforced; unrelated hosts and lookalike paths are rejected.
+The Auditor opens inside the current TACopilot page.
 
 ### If dragging the bookmark fails
 
@@ -47,11 +45,9 @@ The installer also provides **Copy bookmark URL**.
 4. Name it `XSUP Auditor`.
 5. Paste the copied value into the bookmark **URL** field.
 6. Save it.
-7. Open any authenticated page under `https://taco.paloaltonetworks.com:3009/taco/` and click the bookmark.
+7. Open TACopilot and click the bookmark.
 
 The bookmark is self-contained. It does not require hosting the JavaScript on the TACopilot backend or on an external website.
-
-> **Important after an update:** an already-installed bookmark contains the old source bytes. Replace/reinstall the bookmark when a new release is published; updating the GitHub HTML file does not update bookmarks that were already dragged into Chrome.
 
 > Managed-browser policies still apply. Do not bypass corporate browser/security restrictions if bookmark execution is disabled by policy.
 
@@ -214,25 +210,16 @@ JavaScript then parses the selected action and maps it to the corresponding arti
 
 The **Generate KCS** button does not ask the retrospective prompt to classify the artifact type.
 
-It starts with explicit **KCS-family intent** rather than asking the retrospective prompt to choose Admin Guide vs Runbook vs Known Issue.
-
-The direct path initially requests:
+It explicitly sets:
 
 ```text
 Knowledge Action = CREATE KCS
 Artifact Type = KCS Draft
 ```
 
-Before finalizing, it inspects the actual content of available Salesforce KCS candidates. If a materially overlapping article can be extended, Direct Generate KCS may reconcile to:
+and sends the case directly into the KCS quality pipeline.
 
-```text
-Knowledge Action = UPDATE EXISTING KCS
-Artifact Type = KCS Update Proposal
-```
-
-Title/keyword similarity alone is not enough. If candidate content cannot be validated, the tool does not guess an update target; it keeps a new KCS draft and surfaces a REVIEW. If UPDATE is recommended, the reviewer can still choose **Create New KCS Anyway**, and the new draft should reference the overlapping article as Related Existing Knowledge.
-
-This CREATE↔UPDATE reconciliation is an intentional **Direct Generate KCS exception**. In normal retrospective flow, the validated Audit remains authoritative and downstream Knowledge must not silently change the Audit-selected route.
+This keeps the user's intent explicit: **Generate KCS means generate a KCS**, not auto-select another Knowledge type.
 
 See [Knowledge Quality](docs/KNOWLEDGE_QUALITY.md).
 
@@ -350,23 +337,20 @@ Direct KCS results have a workflow-specific Knowledge fingerprint so they do not
 
 # Concurrency
 
-- **XSUP/TACO workers:** default **2**, selectable **2 / 3 / 5 / 10**
-- **Knowledge workers:** **2**
-- **Shared mutating Case Chat generation cap:** **2** across Audit and Knowledge
+- **2** retrospective/direct-case workers maximum
+- **1** independent Knowledge worker
 
-Increasing XSUP/TACO concurrency lets more independent cases resolve evidence/TACO in parallel, while the shared Case Chat cap remains fixed at 2 to reduce transient generation failures.
+Knowledge generation does not block the next retrospective worker from starting.
 
 ---
 
-# Storage and automatic delivery
+# Storage
 
-Default: **Browser Downloads**, with **Auto-save/request completed artifacts** enabled.
+Default: **Browser Downloads**.
 
-For normal retrospective flow, the validated **Audit HTML is delivered first**. Only after the Audit delivery request is initiated does the Audit-selected Knowledge generation begin. Each completed Knowledge artifact then requests its own standalone HTML download.
+Optional: **Choose Folder** using Chrome's File System Access API when available and allowed.
 
-Direct Generate KCS has no retrospective Audit artifact and delivers only its KCS-family output.
-
-Optional: **Choose Folder** using Chrome's File System Access API when available and allowed. Folder permission is browser-controlled and session-only. Storage failure does not change the technical Audit/Knowledge result.
+Folder permission is browser-controlled and session-only. Storage failure does not change the technical Audit/Knowledge result.
 
 ---
 

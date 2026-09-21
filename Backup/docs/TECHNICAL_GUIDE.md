@@ -1,6 +1,6 @@
 # Technical Guide
 
-This document describes the architecture and maintenance contracts of XSUP Auditor & KCS Generator v3 (`github-v3`).
+This document describes the architecture and maintenance contracts of XSUP Auditor & KCS Generator v1.
 
 ---
 
@@ -38,9 +38,7 @@ Do not fork product implementations unless the architecture is intentionally red
 
 # Runtime model
 
-The self-contained bookmarklet/DevTools Snippet runs in the reviewer's current authenticated TACO browser session.
-
-Supported launch scope is the exact origin `https://taco.paloaltonetworks.com:3009` with pathname `/taco` or any descendant under `/taco/`. TACO Pilot and individual case pages are both valid. Other origins, ports and lookalike path prefixes are rejected.
+The Snippet runs on TACopilot and uses the reviewer's current authenticated browser session.
 
 No embedded service credential is required.
 
@@ -51,12 +49,11 @@ No embedded service credential is required.
 Current design:
 
 ```text
-XSUP/TACO workers       = 2 default; selectable 2 / 3 / 5 / 10
-Knowledge workers       = 2
-Case Chat generation max = 2 shared across Audit + Knowledge
+Audit workers     = 2
+Knowledge workers = 1
 ```
 
-The XSUP/TACO selector controls independent evidence/TACO throughput. Mutating Case Chat generations are separately capped at 2 to reduce transient failures and duplicate submissions.
+Knowledge runs independently so Audit throughput can continue.
 
 ---
 
@@ -356,7 +353,7 @@ Only allow safe HTTP/HTTPS links.
 
 ---
 
-# Storage / delivery contract
+# Storage contract
 
 Default browser download.
 
@@ -417,7 +414,7 @@ Do not add:
 Preserve:
 
 1. one Snippet/common engine
-2. XSUP/TACO workers remain selectable 2/3/5/10; Knowledge workers = 2; shared mutating Case Chat generation cap = 2 unless deliberately redesigned
+2. 2 Audit workers + 1 Knowledge worker unless deliberately redesigned
 3. product confirmation on ambiguity
 4. source-driven TACO freshness
 5. original evidence separate from TACO synthesis
@@ -433,12 +430,7 @@ Preserve:
 15. one repair pass only
 16. substantive AI FAIL is not automatically overridden
 17. deterministic gate runs after repair
-18. normal retrospective Knowledge route remains owned by the validated Audit; downstream CREATE↔UPDATE mutation is rejected
-19. Direct Generate KCS is the explicit KCS-family CREATE↔UPDATE reconciliation exception
-20. required primary failure cannot be hidden by successful secondary output
-21. Audit auto-delivery is initiated before normal retrospective Knowledge starts
-22. installer bookmark payload and canonical standalone source must be byte-identical for a release
-23. final Knowledge remains a draft for human review
+18. final Knowledge remains a draft for human review
 
 ---
 
@@ -468,12 +460,10 @@ XSUP → SFDC → product → TACO/evidence → Retrospective Audit → Knowledg
 ## Direct KCS mode
 
 ```text
-XSUP or SFDC → product/context → TACO/evidence → inspect existing Salesforce KCS → KCS Draft OR KCS Update Proposal → Quality pipeline
+XSUP or SFDC → product/context → TACO/evidence → KCS Draft → Quality pipeline
 ```
 
-Direct KCS skips the retrospective Case Chat and begins with `knowledgeAction = CREATE KCS`, `knowledgeArtifactType = KCS_DRAFT`. During Knowledge generation it may reconcile to `UPDATE EXISTING KCS / KCS_UPDATE` only after actual same-scope Salesforce KCS content comparison. If candidate content is unavailable it must not guess an update target. A reviewer can still force **Create New KCS Anyway**, with the overlapping KCS retained as Related Existing Knowledge.
-
-The parent completion invariant treats either valid KCS-family result as satisfying the one required Direct KCS primary. This exception applies only to `directKnowledgeOnly`; normal retrospective jobs remain strictly Audit-led.
+Direct KCS creates a job with `workflowMode = direct_kcs`, skips the retrospective Case Chat, sets `knowledgeAction = CREATE KCS`, `knowledgeArtifactType = KCS_DRAFT`, and queues the common Knowledge worker.
 
 # Knowledge-action classification contract
 
@@ -493,7 +483,7 @@ The prompt selection contract is:
 
 JavaScript parses the returned `Primary Knowledge Action` and maps it deterministically to `KCS_DRAFT`, `KCS_UPDATE`, `DOC_UPDATE`, `RUNBOOK`, or `KNOWN_ISSUE`.
 
-Direct KCS bypasses Admin Guide/Runbook/Known Issue classification and remains KCS-family-only. It starts as `CREATE KCS`, but may reconcile CREATE↔UPDATE after inspecting actual existing Salesforce KCS content.
+Direct KCS bypasses this classification and deliberately selects `CREATE KCS`.
 
 # Direct-KCS quality safeguards
 

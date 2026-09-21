@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# Local/debug/session artifacts
+*.log
+*_Debug*.json
+*_Session*.json
+
+# Generated case artifacts — keep customer/case outputs out of the public repository
+XSUP-*_Retrospective_Audit.html
+XSUP-*_KCS_Draft.html
+XSUP-*_KCS_Update_Proposal.html
+XSUP-*_Admin_Tech_Guide_Update_Proposal.html
+XSUP-*_Runbook_Draft.html
+XSUP-*_Known_Issue*.html

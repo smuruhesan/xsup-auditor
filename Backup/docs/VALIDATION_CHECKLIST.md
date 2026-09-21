@@ -7,7 +7,7 @@ Use this checklist after meaningful source changes.
 # Runtime
 
 - [ ] JavaScript syntax passes
-- [ ] bookmark/Snippet runs on exact `https://taco.paloaltonetworks.com:3009` origin under `/taco`
+- [ ] Snippet runs on intended TACopilot host
 - [ ] UI renders
 - [ ] rerun removes previous Auditor UI cleanly
 
@@ -17,11 +17,10 @@ Use this checklist after meaningful source changes.
 
 - [ ] XSUP parsing
 - [ ] duplicates removed
-- [ ] XSUP/TACO worker selector supports 2 / 3 / 5 / 10; default 2
+- [ ] 2 Audit workers maximum
 - [ ] queue auto-starts
-- [ ] 2 Knowledge workers maximum
-- [ ] shared mutating Case Chat generation cap remains 2 across Audit + Knowledge
-- [ ] Knowledge does not block independent XSUP/TACO queue work
+- [ ] 1 Knowledge worker maximum
+- [ ] Knowledge does not block Audit queue
 
 ---
 
@@ -295,13 +294,10 @@ Confirm:
 # Bookmark distribution
 
 - [ ] installer HTML opens locally
-- [ ] green XSUP Auditor v3 link can be dragged to bookmarks when browser permits
+- [ ] blue XSUP Auditor link can be dragged to bookmarks when browser permits
 - [ ] Copy bookmark URL fallback works
 - [ ] manually created bookmark retains `javascript:` prefix
-- [ ] bookmark runs from `/taco/pilot/`
-- [ ] bookmark runs from `/taco/case/<SFDC>`
-- [ ] bookmark runs from other valid `/taco/...` descendants
-- [ ] wrong origin/port, site root and lookalike `/tacofoo` paths are rejected
+- [ ] bookmark runs only on intended TACopilot page context
 - [ ] bookmark and canonical source contain matching current logic
 - [ ] DevTools Snippet fallback still works
 
@@ -317,12 +313,8 @@ Confirm:
 - [ ] original evidence collected
 - [ ] retrospective field review is skipped/not applicable
 - [ ] no Review Paste Comment generated for direct KCS basis
-- [ ] direct job starts with `CREATE KCS / KCS_DRAFT` KCS-family intent
-- [ ] same-scope existing Salesforce KCS content can reconcile Direct CREATE → UPDATE
-- [ ] Direct CREATE → UPDATE counts as a successful required primary artifact
-- [ ] title/keyword similarity alone does not trigger UPDATE
-- [ ] candidate content unavailable → do not guess target; CREATE + REVIEW
-- [ ] Create New KCS Anyway can override Direct UPDATE recommendation and references existing KCS
+- [ ] `CREATE KCS` selected explicitly
+- [ ] `KCS_DRAFT` artifact used
 - [ ] full Knowledge quality pipeline runs
 - [ ] direct-KCS reuse identity does not incorrectly reuse incompatible artifact intent
 
@@ -338,19 +330,7 @@ Test cases for each prompt outcome:
 - [ ] NO KNOWLEDGE ACTION — no material reusable gap
 - [ ] UNDETERMINED — insufficient evidence
 - [ ] JavaScript maps action to correct artifact type/template
-- [ ] direct KCS bypasses Admin Guide/Runbook/Known Issue classification but may reconcile KCS CREATE↔UPDATE
-
-# Audit-led routing and delivery invariants
-
-- [ ] normal retrospective Audit CREATE cannot silently become UPDATE downstream
-- [ ] normal retrospective Audit UPDATE cannot silently become CREATE downstream
-- [ ] required primary failure is not masked by secondary success
-- [ ] normal retrospective Audit HTML delivery is initiated before Knowledge generation starts
-- [ ] each completed Knowledge artifact can render and download standalone HTML
-- [ ] full renderer→download path is tested, not only dummy Blob content
-- [ ] no `.xa-inline-review-callout` or `.xa-inline-review-marker` is nested inside H1-H6
-- [ ] `knowledgeValidationNoticeHtml` is defined and renderer completes without ReferenceError
-- [ ] installer bookmark payload decodes byte-for-byte to canonical release source
+- [ ] direct KCS bypasses category selection and remains KCS
 
 # Current Knowledge quality fallback
 

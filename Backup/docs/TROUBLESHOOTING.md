@@ -17,34 +17,22 @@ Browser refresh removes the injected UI.
 Run the Snippet again.
 
 ---
-# Bookmark does not open from a case page
-
-v3 supports any authenticated page under:
-
-```text
-https://taco.paloaltonetworks.com:3009/taco/
-```
-
-including `/taco/pilot/` and `/taco/case/<SFDC>`. If it still behaves like Pilot-only, replace the installed bookmark: self-contained bookmarks keep the old embedded source and do not auto-update when the GitHub installer file changes.
-
-Verify the exact host, port and `/taco` path; other origins and lookalike paths are intentionally rejected.
-
----
-
 
 # Only two XSUPs are running
 
-The default **Parallel XSUP / TACO processing** value is 2. You can select 2, 3, 5 or 10 for independent evidence/TACO processing.
+Expected.
 
-This does not raise the shared Case Chat generation limit, which remains 2.
+Audit concurrency is 2.
+
+Additional XSUPs queue automatically.
 
 ---
 
 # Knowledge is queued
 
-Two Knowledge workers are available, but Audit and Knowledge share a maximum of two active mutating Case Chat generations. A Knowledge job can therefore queue while those slots are occupied.
+Expected when the single Knowledge worker is busy.
 
-XSUP/TACO workers can continue independent non-generation work.
+Audit workers continue independently.
 
 ---
 
@@ -118,22 +106,11 @@ Wait until active/conflicting work is finished and current case/TACO/evidence is
 
 # Regenerate Knowledge is disabled
 
-For a normal retrospective it requires:
+It requires:
 
 - completed Audit
 - a Knowledge action/artifact type
 - no conflicting active work
-
-For **Direct Generate KCS**, a retrospective Audit is not required. Direct KCS regeneration uses current TACO/original evidence and the KCS-family artifact state.
-
----
-# Direct KCS created an Update Proposal but the dashboard says Knowledge failed
-
-That was a v2.4.40 aggregate-state defect: the direct request started as CREATE/KCS Draft, legitimately reconciled to UPDATE/KCS Update after inspecting existing Knowledge, then the parent completion check compared the final route to the original request too strictly.
-
-v3 treats a valid Direct KCS Draft **or** valid Existing KCS Update Proposal as satisfying the required Direct KCS primary. Normal retrospective Audit-led routing remains strict.
-
-If you still see the old failure text, reinstall the v3 bookmark.
 
 ---
 

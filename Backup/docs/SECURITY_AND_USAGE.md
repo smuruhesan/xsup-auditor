@@ -126,7 +126,7 @@ Do not use the Auditor to bypass:
 
 # Bookmark distribution security model
 
-The distributed bookmark is self-contained and intended to execute only while the reviewer is on the approved TACO origin `https://taco.paloaltonetworks.com:3009` at `/taco` or a descendant path under `/taco/` (including Pilot and case pages). Other origins/ports and lookalike paths are rejected.
+The distributed bookmark is self-contained and intended to execute only while the reviewer is already on the approved TACopilot page.
 
 It does not require:
 
@@ -136,7 +136,7 @@ It does not require:
 - a local web server;
 - embedded credentials.
 
-The bookmark and DevTools Snippet both rely on the reviewer's existing authenticated TACO/TACopilot browser session and same-origin access. The bookmark is self-contained, so an installed bookmark must be replaced after a release if the embedded source changed.
+The bookmark and DevTools Snippet both rely on the reviewer's existing authenticated TACopilot browser session and same-origin access.
 
 If a managed-browser policy disables bookmarklets, downloads, local files, clipboard access or other browser behavior, do not bypass that policy. Use only an approved supported method.
 

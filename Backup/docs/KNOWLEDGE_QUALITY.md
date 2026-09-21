@@ -129,29 +129,25 @@ This is an AI/Case Chat decision constrained by the explicit prompt rubric and e
 
 It is **not** a simple keyword classifier.
 
-## Direct Generate KCS mode — KCS-family routing
+## Direct Generate KCS mode — no artifact-type classification
 
-When the reviewer clicks **Generate KCS**, the intent is explicitly **KCS-family**. The retrospective field-review/Knowledge-classification prompt is skipped.
+When the reviewer clicks **Generate KCS**, the intent is explicit.
 
-The direct job begins as:
+The tool sets:
 
 ```text
 Primary Knowledge Action = CREATE KCS
 Artifact Type = KCS Draft
 ```
 
-The Knowledge prompt then inspects the actual content of available Salesforce KCS candidates. If a same-scope article materially covers the issue and can be extended, the final route may reconcile to:
+and does not run the retrospective field-review/Knowledge-classification prompt.
 
-```text
-Primary Knowledge Action = UPDATE EXISTING KCS
-Artifact Type = KCS Update Proposal
-```
+Direct KCS can start from either:
 
-Title/keyword similarity alone is insufficient. If candidate content cannot be inspected, the safe behavior is a new KCS draft plus a REVIEW rather than guessing an update target. When UPDATE is recommended, **Create New KCS Anyway** remains an explicit reviewer override and the overlapping KCS is preserved as Related Existing Knowledge.
+- an XSUP ID; or
+- an 8-digit SFDC case number.
 
-This reconciliation exception applies only to Direct Generate KCS. In retrospective flow, the validated Audit owns destination selection and downstream quality/enrichment must not silently reroute CREATE↔UPDATE.
-
-Direct KCS can start from either an XSUP ID or an 8-digit SFDC case number. It still performs product/context resolution, TACO freshness handling, original evidence collection, Knowledge generation and the full quality workflow.
+It still performs product/context resolution, TACO freshness handling, original evidence collection, Knowledge generation and the full quality workflow.
 
 ---
 
