@@ -120,13 +120,13 @@ The retrospective decides which Support-owned fields are applicable and which Kn
 Input can be either:
 
 ```text
-XSUP-72446
+XSUP-12345
 ```
 
 or:
 
 ```text
-04005807
+04000001
 ```
 
 Flow:
