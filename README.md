@@ -82,8 +82,8 @@ See the [User Guide](docs/USER_GUIDE.md) for detailed setup and usage.
 Input:
 
 ```text
-XSUP-72446
-XSUP-81234
+XSUP-12345
+XSUP-56789
 ```
 
 Flow:
