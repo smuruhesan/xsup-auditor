@@ -1,11 +1,13 @@
 /*
-XSUP Auditor & KCS Generator — Initial Team Release
+XSUP Auditor & KCS Generator — v1.0 Initial Team Release
 Supported product profiles
 - XDR/XSIAM
 - XSOAR
 - Cortex Cloud
 
 Runtime model
+- v1 preflight: Load XSUP/SFDC jobs into the dashboard before execution, then select per-XSUP workflow and a single Run Mode option. Fresh TACO analysis is an explicit Run Mode choice and automatically refreshes the downstream output for that workflow.
+- Per-XSUP hard cancellation is intentionally not added in v1; the proven global Stop All behavior is retained.
 - One Chrome DevTools Snippet running inside TACopilot.
 - Uses the reviewer's existing authenticated TACopilot session only.
 - Runs from any authenticated TACO page under https://taco.paloaltonetworks.com:3009/taco/ (for example /taco/pilot/ or /taco/case/<SFDC>).
@@ -15,13 +17,15 @@ Runtime model
 - Reviewer-selectable XSUP/TACO workers: 2, 3, 5 or 10 (default 2); two Knowledge workers remain independent.
 - A shared generation cap remains fixed at no more than two Case Chat generations at once across both queues, even when XSUP/TACO parallelism is increased.
 - Failed Audit or Knowledge stages can be retried independently while retaining a successful current TACO snapshot.
-- Automatic TACO freshness: reuse current analysis, wait for a running analysis, or refresh only when current evidence requires it.
+- Automatic TACO freshness: reuse a usable current analysis, wait only for a genuinely active newer analysis, and surface newer Jira/SFDC evidence without silently forcing TACO regeneration.
 - Hard TACO barrier: Audit/Knowledge Case Chat is never started while the selected TACO investigation is active; an older synthesized report cannot bypass a running refresh.
-- If Jira/SFDC evidence is newer than the completed TACO report, TACO is refreshed and the final revised report is awaited before downstream generation.
+- Automatic mode reuses usable results only while they remain valid for current evidence. If Jira/SFDC evidence is newer than a usable completed TACO report, Automatic mode keeps that TACO report but clearly flags the newer evidence and prevents stale downstream reuse; the explicit Regenerate TACO Analysis Run Mode creates a fresh TACO report and downstream output.
 - Audit and knowledge Case Chat results are fingerprinted and reused only when their current inputs still match.
 - Retrospective knowledge review distinguishes existing internal knowledge from a Salesforce/distribution gap; all knowledge artifacts share one linked evidence/review envelope, including fallback/reused drafts.
 - Knowledge generation is adaptive across products/components/artifact types; Internal Notes preserve useful TAC/Engineering implementation context in readable form while public-facing bodies stay reusable and source-validated.
 - Review Paste Comment uses readable paragraph/action spacing and can be copied directly from both the live panel and downloaded retrospective HTML.
+- UPDATE EXISTING KCS review actions preserve the exact inspected KCS title, article ID, direct Salesforce link, current coverage and identified update gap so the pasted retrospective review is actionable without opening a second artifact.
+- KCS update proposals surface the exact Existing Knowledge Reference as a clickable decision card and flag unsupported prevalence wording such as "frequently" or "most common" for review unless current authoritative evidence supports the frequency claim.
 - The retrospective Audit is the primary knowledge-routing decision: it inspects available existing KCS/docs/pages/prior evidence and explicitly selects CREATE KCS, UPDATE EXISTING KCS, Admin/Tech Guide, Runbook, Known Issue/Release Note, or no knowledge action. No hidden companion artifact is injected after the Audit.
 - Every generated knowledge draft carries a highlighted validation notice, source freshness/applicability guidance, explicit conflict review, anti-circularity safeguards, origin traceability, and detailed sourced TAC/Engineering context in Internal Notes.
 - Dedicated Generate KCS produces only a KCS-family artifact, performs CREATE-vs-UPDATE content matching, and lets the reviewer deliberately create a separate new KCS when an existing KCS is available; the new draft keeps the related existing KCS referenced.
@@ -31,6 +35,14 @@ Runtime model
 - Every review/blocker is rendered directly beside the affected claim/reference, with canonical claim highlighting, readable R# source identity, structured review category, specific why/action guidance, and no separate bottom review inventory.
 - Exact non-authoritative timing is routed through formal claim-linked review items instead of raw editorial timing notes; Markdown evidence tables render as HTML tables.
 - Source-currentness reviews are created only when a historical/non-authoritative source materially supports a reusable technical claim; background-only source age remains visible in Source References without creating noisy body reviews.
+- Derivative/AI evidence is a publication blocker only when it is the sole material authority for a reusable public claim; co-cited original/maintained authority prevents a false derivative blocker while the derivative source remains clearly non-authoritative.
+- Existing Knowledge Decision rendering is destination-agnostic: CREATE routes preserve the closest inspected KCS/doc/guide/runbook/prior reference plus existing coverage and reusable gap instead of showing only Salesforce-KCS context.
+- Technical-block review distinguishes runnable/request/configuration content from read-only API response/output examples, recognizes CMD/BAT/plain-output fences without cross-fence capture, and keeps internal backend implementation details TAC-only unless maintained public authority explicitly supports public reuse.
+- Any identified Salesforce KCS with meaningful inspected coverage now passes a mandatory mergeability gate: UPDATE is the default when the existing article can absorb the missing reusable content; CREATE requires an explicit DISTINCT-scope justification showing why merging would materially confuse or over-broaden the existing article, even when the model did not label the match PARTIAL.
+- Public-vs-TAC-only handling now deterministically generalizes privileged/internal implementation identifiers in reusable public bodies and preserves the exact sourced context in Internal Notes; human-facing Audit summaries/Review Paste also redact backend-only mechanics.
+- Explicit Regenerate options now bypass every pre-existing Case Chat reuse path for the selected stage while Automatic/Reuse mode retains safe compatible/exact-prompt reuse.
+- Downloaded KCS HTML includes low-profile SME-only Cortex Brain validation tools at the very bottom; copy/download exports contain the mandatory validation prompt plus clean KCS content and source references, not XSUP Auditor review UI.
+- Salesforce Knowledge links are canonicalized before rendering so Markdown-link residue cannot corrupt the clickable Knowledge__kav URL.
 - Review routing, source provenance/freshness, audit sanitization and list rendering are hardened so exact details remain reviewable without being presented as automatically authoritative.
 - Renderer/finalizer guards strip quality-control preambles, keep ordered procedure numbering continuous across blank/code blocks, keep review highlights out of HTML attributes, and prevent numbered-list residue from leaking into Audit comments.
 
@@ -67,9 +79,9 @@ Artifact storage
   const NO_PROGRESS_WARNING_MS = 3 * 60 * 1000;
   const NO_RESPONSE_WARNING_MS = 60 * 1000;
   const REPO_URL = "https://github.com/smuruhesan/xsup-auditor";
-  const AUDIT_REUSE_SCHEMA = "support-field-review-v11-audit-led-knowledge-routing";
-  const KNOWLEDGE_REUSE_SCHEMA = "knowledge-quality-v13-final-inline-evidence-reliability";
-  const KNOWLEDGE_DRAFT_REUSE_SCHEMA = "knowledge-enriched-draft-v13-final-inline-evidence-reliability";
+  const AUDIT_REUSE_SCHEMA = "support-field-review-v13-kcs-mergeability-audit-sanitize";
+  const KNOWLEDGE_REUSE_SCHEMA = "knowledge-quality-v15-mergeability-tac-only-runnable";
+  const KNOWLEDGE_DRAFT_REUSE_SCHEMA = "knowledge-enriched-draft-v15-mergeability-tac-only-runnable";
   const KNOWLEDGE_FINAL_DELIMITER = "--- FINAL ARTIFACT ---";
   const REUSE_META_PREFIX = "[XSUP-AUDITOR-META]";
 
@@ -122,6 +134,130 @@ CORTEX CLOUD RETROSPECTIVE POLICY
   });
 
   const PRODUCT_KEYS = Object.freeze(Object.keys(PRODUCT_PROFILES));
+
+
+  // Public/team release label. Internal VERSION/BUILD_ID are intentionally kept
+  // unchanged so proven reuse/transport behavior is not invalidated by a UI label.
+  const PUBLIC_RELEASE_LABEL = "v1.0 · Initial Team Release";
+
+  // Team-provided dropdown snapshot (2026-09). These lists constrain NEW Audit
+  // recommendations only; they do not change product applicability/routing rules.
+  // Unknown future values must be reviewed rather than silently normalized.
+  const AUDIT_FIELD_ALLOWED_VALUES = Object.freeze({
+    Resolution: Object.freeze([
+      "Accepted","Bug","Cancelled","Cannot Reproduce","Closed","Consolidated",
+      "Decline","Declined","Declined(s)","Defer","Deferred","DELETED","Deprecated",
+      "Done","Duplicate","Environment/Config issue","Expired","Fixed","Functions as designed",
+      "Hardware failure","Idea Dropped","Incomplete","Infrastructure Change","Invalid","Invalid Issue",
+      "Its a Feature","Known Error","Live","Needs More Info","Non Issue","Not a Bug","Not Resolved",
+      "Old Backlog","Pending","Ready","Ready to Launch","Rejected","Reopen","Reproducible","Resolved",
+      "RMA","Software failure","Unresolved","(unresolved)","Watch","Won't Do","Won't Fix","Workaround","Works as Implemented"
+    ]),
+    "Fix Type": Object.freeze([
+      "None","Cannot reproduce","Existing Code Fix","Functions as designed","Internal Config change",
+      "New Code Fix","System misuse","Upcoming Version Fix","Won't Fix","Workaround"
+    ]),
+    RCA: Object.freeze([
+      "3rd Party Integration/Vendor","Code Fix - Day 1","Code Fix - Regression","Configuration Issue",
+      "Could not replicate","Customer ask","Documentation - Content Gap","Moved to RFE (Request for Enhancement)",
+      "No Response from Customer","Performance/Scalability","User Error"
+    ])
+  });
+
+  function auditApplicableFieldContract(profile) {
+    const fields = [...new Set(profile?.primaryFieldOrder || [])];
+    const purpose = {
+      Resolution: "Choose the value that best describes the evidence-backed technical outcome or final disposition of the issue.",
+      RCA: "Choose the category that best describes the evidence-backed underlying root cause.",
+      "Fix Type": "Choose the value that best describes the corrective action, product change, configuration change, workaround, or no-change outcome established by the evidence.",
+      "Flag / Label": "Evaluate only the product-policy label/flag trigger. For XSOAR retrospective routing, Session_candidate is the relevant approved trigger; do not invent or add unrelated labels."
+    };
+    return fields.map(name => {
+      const allowed = AUDIT_FIELD_ALLOWED_VALUES[name] || [];
+      const values = allowed.length ? `Allowed ${name} values (use one exact value):\n${allowed.join("; ")}` : "No finite dropdown snapshot is supplied for this label/flag category; apply only the selected product policy trigger and the trusted saved-label evidence.";
+      const legacy = name === "Resolution" ? '\n- Defer and Deferred are legacy DO NOT USE values and must never be recommended as a new/correct Resolution.' : "";
+      return `FIELD: ${name}\nPurpose: ${purpose[name] || "Choose the technically correct value for this product-policy field."}\n${values}${legacy}`;
+    }).join("\n\n");
+  }
+
+  function auditFieldOutputContract(profile, xsup) {
+    const target = xsup || "the linked XSUP";
+    const blocks = (profile?.primaryFieldOrder || []).map(name => {
+      if (name === "Flag / Label") return `**Label / Flag Change Needed:** [NO / YES / VERIFY SAVED VALUE / VERIFY + CHANGE / NOT APPLICABLE]
+
+### Flag / Label Review
+[Include only when Flag/Label is applicable under the selected product policy; otherwise omit this subsection and use NOT APPLICABLE above.]
+
+**Flag / Label Current Value:** [exact trusted structured Jira Labels value, or "Not verified"]
+
+**Flag / Label Technical Assessment:** [concise assessment of what the policy-governed label/flag should be]
+
+**Flag / Label Verdict:** [CORRECT / INCORRECT / TECHNICALLY CORRECT / TECHNICALLY INCORRECT / CURRENT VALUE NEEDED]
+
+**Flag / Label Change Required:** [NO / YES / VERIFY SAVED VALUE / VERIFY + CHANGE]
+
+**Flag / Label Recommended Value:** [exact correct/expected policy-governed value]
+
+**Flag / Label Why:** [1-2 concise case-specific technical sentences only; omit policy/lookup mechanics]
+
+**Flag / Label Detailed Explanation:** [detailed technical explanation for SME/Engineering review]
+
+**Flag / Label Supporting Evidence:** [strongest underlying evidence]
+
+**Flag / Label Support Action:** [one concise internal action; if saved-value verification is required use "Verify saved Jira Labels on ${target}"]`;
+
+      return `**${name} Change Needed:** [NO / YES / VERIFY SAVED VALUE / VERIFY + CHANGE / NOT APPLICABLE]
+
+### ${name} Review
+[Include only when ${name} is applicable under the selected product policy; otherwise omit this subsection and use NOT APPLICABLE above.]
+
+**${name} Current Value:** [exact trusted structured Jira ${name} value, or "Not verified"]
+
+**${name} Technical Assessment:** [concise assessment of what the value should technically be]
+
+**${name} Verdict:** [CORRECT / INCORRECT / TECHNICALLY CORRECT / TECHNICALLY INCORRECT / CURRENT VALUE NEEDED]
+
+**${name} Change Required:** [NO / YES / VERIFY SAVED VALUE / VERIFY + CHANGE]
+
+**${name} Recommended Value:** [one exact allowed value from this field's applicable list]
+
+**${name} Why:** [1-2 concise case-specific technical sentences only; omit policy/lookup mechanics]
+
+**${name} Detailed Explanation:** [detailed technical explanation for SME/Engineering review]
+
+**${name} Supporting Evidence:** [2-5 strongest underlying evidence points]
+
+**${name} Support Action:** [one concise internal action; if saved-value verification is required use "Verify saved Jira ${name} on ${target}"]`;
+    });
+
+    return `**Reviewed Fields:** [list ONLY fields actually applicable under the selected product policy, or "None — Out of Scope", or "UNDETERMINED"]
+
+${blocks.join("\n\n")}`;
+  }
+
+  function validateAuditRecommendedFieldValues(answer) {
+    const a = String(answer || "");
+    const specs = [
+      {name:"Resolution", change:"Resolution Change Needed", recommended:"Resolution Recommended Value"},
+      {name:"RCA", change:"RCA Change Needed", recommended:"RCA Recommended Value"},
+      {name:"Fix Type", change:"Fix Type Change Needed", recommended:"Fix Type Recommended Value"}
+    ];
+    const normalize = value => cleanText(value || "").toLowerCase();
+    for (const spec of specs) {
+      const change = normalizeDecision(extractField(a, spec.change));
+      if (!change || change === "NOT APPLICABLE" || change === "N/A") continue;
+      const value = cleanText(extractField(a, spec.recommended));
+      if (!value || /^(?:UNDETERMINED|NOT APPLICABLE|N\/A|NO CHANGE)$/i.test(value)) continue;
+      const allowed = AUDIT_FIELD_ALLOWED_VALUES[spec.name] || [];
+      if (spec.name === "Resolution" && /^(?:Defer|Deferred)$/i.test(value)) {
+        return {valid:false, reason:`${spec.name} Recommended Value is a legacy DO NOT USE option: ${value}`};
+      }
+      if (!allowed.some(x => normalize(x) === normalize(value))) {
+        return {valid:false, reason:`${spec.name} Recommended Value is not in the configured team dropdown snapshot: ${value}`};
+      }
+    }
+    return {valid:true};
+  }
 
 
   const TACOPILOT_ORIGIN = "https://taco.paloaltonetworks.com:3009";
@@ -194,6 +330,12 @@ CORTEX CLOUD RETROSPECTIVE POLICY
     lastStatusKind: "",
     dashboardRenderSignature: "",
     jobListRenderSignature: "",
+
+    // Read-only Load/preflight may wait on an already-running TACO investigation.
+    // Keep one lightweight timer per staged job so Copy Prompt becomes available
+    // automatically as soon as the existing synthesized report is usable.
+    stagedPromptPollTimers: new Map(),
+    stagedPromptPollIntervalMs: 10000,
 
     // v2.4 trusted-field observer. Values are accepted only from structured Jira
     // issue-field objects observed in TACopilot's own successful browser traffic.
@@ -1252,11 +1394,12 @@ CORTEX CLOUD RETROSPECTIVE POLICY
     if (!bubble) return;
 
     const jobs = [...state.jobs.values()];
+    const staged = jobs.filter(j => j.status === "staged" && j.executionPlan !== "skip" && !j.promptNeedsSfdcSelection && !j.promptNeedsSfdcEntry).length;
     const running = jobs.filter(j => j.status === "running").length;
     const queued = jobs.filter(j => j.status === "queued").length;
     const done = jobs.filter(jobWorkflowComplete).length;
     const failed = jobs.filter(j => j.status === "failed").length;
-    const choose = jobs.filter(j => j.status === "needs_selection" || j.status === "needs_sfdc").length;
+    const choose = jobs.filter(j => j.status === "needs_selection" || j.status === "needs_sfdc" || j.promptNeedsSfdcSelection || j.promptNeedsSfdcEntry).length;
     const knowledgeGenerating = jobs.filter(j => j.knowledgeStatus === "generating").length;
     const knowledgeQueued = jobs.filter(j => j.knowledgeStatus === "queued").length;
 
@@ -1264,6 +1407,7 @@ CORTEX CLOUD RETROSPECTIVE POLICY
       const hasPendingWork = Boolean(running || queued || knowledgeGenerating || knowledgeQueued);
       const prefix = failed ? "⚠" : hasPendingWork ? "⟳" : done ? "✓" : "•";
       const parts = [];
+      if (staged) parts.push(`${staged} ready`);
       if (running) parts.push(`${running} running`);
       if (queued) parts.push(`${queued} queued`);
       if (choose) parts.push(`${choose} choose SFDC`);
@@ -1883,11 +2027,14 @@ CORTEX CLOUD RETROSPECTIVE POLICY
       }
 
       terminalFailureConfirmations = 0;
-      if (status && status !== "completed") sawActiveState = true;
+      const progressReachedHundred = progress != null && progress >= 100;
+      if (status && status !== "completed" && !progressReachedHundred) sawActiveState = true;
 
-      if (status === "completed") {
-        if (!requireFresh) return {...d, _investigationId: currentInvestigationId};
-
+      // TACopilot sometimes keeps status=running even after overall_progress=100.
+      // Treat 100% as completion-like for report acceptance, but never accept the
+      // old report after an explicit/observed refresh unless the requested revision
+      // condition is actually satisfied.
+      if (status === "completed" || progressReachedHundred) {
         const countAdvanced =
           baselineReportCount !== null &&
           currentReportCount !== null &&
@@ -1901,7 +2048,19 @@ CORTEX CLOUD RETROSPECTIVE POLICY
           ready = reportReady(currentReport);
           currentMarker = reportMarker(currentReport);
           reportTimestamp = timestampFromObject(currentReport, d, latestInvestigationTimestamp ? {updated_at:latestInvestigationTimestamp} : null);
-        } catch (_) {}
+        } catch (_) {
+          // Report reads can transiently fail while TACopilot is materializing or
+          // rehydrating the result. Keep waiting; do not fail or start a duplicate.
+        }
+
+        // Ordinary automatic waiting does not require a new revision. If progress
+        // says completed, the dedicated report waiter below can safely handle a
+        // report body that has not materialized yet. If status is stale-running at
+        // 100%, wait here until the usable report body becomes visible.
+        if (!requireFresh) {
+          if (status === "completed") return {...d, _investigationId: currentInvestigationId};
+          if (ready) return {...d, _investigationId: currentInvestigationId};
+        }
 
         const markerChanged =
           Boolean(baselineReportMarker) &&
@@ -1923,19 +2082,32 @@ CORTEX CLOUD RETROSPECTIVE POLICY
           return {...d, _investigationId: currentInvestigationId};
         }
 
-        if (ready && !requireReportRevision && (sawActiveState || countAdvanced || markerChanged || investigationChanged || timestampFresh)) {
+        // If there was no usable baseline report, any usable report obtained after
+        // the requested refresh is sufficient; there is no old synthesized body to
+        // accidentally accept. Otherwise preserve the existing freshness proof.
+        if (ready && !requireReportRevision && (!baselineReportMarker || revisionConfirmed)) {
           return {...d, _investigationId: currentInvestigationId};
         }
 
-        progressUpdate(requireReportRevision
-          ? "TACO completed; waiting for the revised synthesized report..."
-          : "TACO completed; verifying refreshed report revision...", {
-          phase: "taco",
-          tacoProgress: 100,
-          backendStatus: "completed",
-          heartbeat: true,
-          activity: "TACO 100% · verifying refreshed report revision"
-        });
+        const waitingForBody = !ready;
+        progressUpdate(
+          waitingForBody
+            ? "TACO reached 100%; waiting for synthesized report content..."
+            : requireReportRevision
+              ? "TACO reached 100%; waiting for the revised synthesized report..."
+              : "TACO reached 100%; verifying refreshed report revision...",
+          {
+            phase: "taco",
+            tacoProgress: 100,
+            backendStatus: status || "completed",
+            heartbeat: true,
+            activity: waitingForBody
+              ? "TACO 100% · waiting for synthesized report content"
+              : requireReportRevision
+                ? "TACO 100% · waiting for revised report"
+                : "TACO 100% · verifying refreshed report revision"
+          }
+        );
       }
 
       // Long TACO runs are expected. A lack of movement is surfaced as a notice,
@@ -2123,18 +2295,21 @@ CORTEX CLOUD RETROSPECTIVE POLICY
     const latestStatus = String(latest?.status || "").toLowerCase();
     const status = progressStatus || latestStatus;
     const progressValue = Number(progress?.overall_progress);
-    const progressLooksActive = Number.isFinite(progressValue) && progressValue >= 0 && progressValue < 100 && progressStatus !== "completed";
-    // The per-investigation progress endpoint is the more specific state source.
-    // TACopilot's investigation-list endpoint can lag behind it (for example,
-    // list status=running while progress status=completed and a final report exists).
-    // Never let that stale list flag reopen the hard TACO barrier after progress
-    // has already reported a terminal state. Fall back to list status only when
-    // progress does not expose a status at all.
+    const progressKnown = Number.isFinite(progressValue);
+    const progressAtHundred = progressKnown && progressValue >= 100;
+    const progressLooksActive = progressKnown && progressValue >= 0 && progressValue < 100 && progressStatus !== "completed";
+
+    // The per-investigation progress endpoint is more specific than the list entry,
+    // but TACopilot can leave a stale `running` flag behind even after 100% and a
+    // usable synthesized report are already available. Never make that stale flag
+    // stronger than an actually usable 100% report.
     const activeStatus = isActiveTacoStatus(progressStatus)
       ? progressStatus
       : (!progressStatus && isActiveTacoStatus(latestStatus) ? latestStatus : "");
+
     // Prefer the report's own generation/completion timestamp for freshness.
-    // Progress/list timestamps can move independently of the synthesized report.
+    // Progress/list timestamps can move independently while TACopilot renders or
+    // rehydrates an already-completed report in the browser.
     const tacoTimestamp = timestampFromObject(report) || timestampFromObject(progress, latest);
     const valid = reportReady(report);
 
@@ -2145,39 +2320,47 @@ CORTEX CLOUD RETROSPECTIVE POLICY
         tacoTimestamp,
         evidenceTimestamp,
         status,
-        valid
+        valid,
+        refreshExplicit: true
       };
     }
 
-    // Hard barrier with stale-active reconciliation. A genuinely current active
-    // investigation blocks Audit/Knowledge. However, if the investigation's own
-    // activity timestamp predates newer Jira/SFDC evidence, it cannot satisfy the
-    // freshness contract and must be refreshed instead of being waited on forever.
-    if (activeStatus || progressLooksActive) {
-      const activeInvestigationTimestamp = timestampFromObject(progress, latest);
-      if (
-        Number.isFinite(Number(evidenceTimestamp)) &&
-        Number.isFinite(Number(activeInvestigationTimestamp)) &&
-        Number(evidenceTimestamp) > Number(activeInvestigationTimestamp)
-      ) {
-        return {
-          action: "refresh",
-          reason: `The active TACO investigation predates newer Jira/SFDC evidence (${formatTimestamp(evidenceTimestamp)} > ${formatTimestamp(activeInvestigationTimestamp)}); refreshing it before Audit/Knowledge.`,
-          tacoTimestamp,
-          evidenceTimestamp,
-          status,
-          valid,
-          activeInvestigationTimestamp
-        };
-      }
+    // TACopilot can report 100%/completed before the final synthesized report body
+    // becomes readable, and its browser page may show Loading for a while before
+    // the existing report appears. Treat that as report materialization before
+    // considering a stale `running` flag. The waiter is intentionally non-failing
+    // for slow materialization and transient read errors.
+    if (!valid && (progressAtHundred || progressStatus === "completed" || (!progressStatus && latestStatus === "completed"))) {
       return {
         action: "wait",
-        reason: `TACO investigation is still active${activeStatus ? ` (${activeStatus})` : progressLooksActive ? ` (${progressValue}%)` : ""}; waiting for completion before Audit/Knowledge.`,
+        reason: "TACO reached a completed/100% state but the synthesized report is still loading; waiting for the existing report content instead of starting another analysis.",
         tacoTimestamp,
         evidenceTimestamp,
         status,
         valid,
-        activeInvestigationTimestamp
+        requireReportRevision: false,
+        waitReason: "report_materialization"
+      };
+    }
+
+    // A usable report at 100% is a completed candidate even if the backend status
+    // still says `running`. This is a known TACopilot lifecycle shape and must not
+    // reopen the hard barrier or force a nonexistent report revision.
+    if (valid && (progressAtHundred || progressStatus === "completed" || (!progressStatus && latestStatus === "completed"))) {
+      // Continue into the normal source-freshness comparison below.
+    } else if (activeStatus || progressLooksActive) {
+      return {
+        action: "wait",
+        reason: `TACO investigation is still active${progressLooksActive ? ` (${progressValue}%)` : activeStatus ? ` (${activeStatus})` : ""}; waiting for completion before Audit/Knowledge.`,
+        tacoTimestamp,
+        evidenceTimestamp,
+        status,
+        valid,
+        // If a usable older report already exists while progress is genuinely
+        // below 100, a real refresh may be in flight. In that one case the waiter
+        // must require a different report revision before downstream work starts.
+        requireReportRevision: Boolean(valid && progressLooksActive),
+        waitReason: valid && progressLooksActive ? "active_refresh" : "active_analysis"
       };
     }
 
@@ -2185,12 +2368,13 @@ CORTEX CLOUD RETROSPECTIVE POLICY
       if (Number.isFinite(evidenceTimestamp) && Number.isFinite(tacoTimestamp)) {
         if (evidenceTimestamp > tacoTimestamp) {
           return {
-            action: "refresh",
-            reason: `Newer Jira/SFDC evidence exists after the TACO analysis (${formatTimestamp(evidenceTimestamp)} > ${formatTimestamp(tacoTimestamp)}).`,
+            action: "reuse",
+            reason: `Newer Jira/SFDC evidence exists after this TACO analysis (${formatTimestamp(evidenceTimestamp)} > ${formatTimestamp(tacoTimestamp)}). Automatic mode keeps the existing TACO report and carries the newer original evidence into downstream processing; choose Regenerate TACO Analysis if the new evidence must be incorporated into a fresh TACO report.`,
             tacoTimestamp,
             evidenceTimestamp,
             status,
-            valid
+            valid,
+            newerEvidence: true
           };
         }
         return {
@@ -2232,6 +2416,23 @@ CORTEX CLOUD RETROSPECTIVE POLICY
         evidenceTimestamp,
         status,
         valid
+      };
+    }
+
+    // An investigation exists but neither its status nor its report has settled.
+    // This can happen while the TACopilot page/API is still rehydrating an older
+    // completed analysis. Waiting is safer than accidentally starting a duplicate
+    // TACO run. The user can still explicitly choose Regenerate TACO Analysis.
+    if (!status) {
+      return {
+        action: "wait",
+        reason: "Existing TACO investigation state/report is still loading; waiting for TACopilot to expose the existing analysis before deciding whether regeneration is needed.",
+        tacoTimestamp,
+        evidenceTimestamp,
+        status,
+        valid,
+        requireReportRevision: false,
+        waitReason: "state_materialization"
       };
     }
 
@@ -2418,14 +2619,6 @@ CORTEX CLOUD RETROSPECTIVE POLICY
     const profile = getProductProfile(job.productKey);
     if (!profile) throw new Error("Product must be selected before Retrospective Case Chat starts.");
 
-    const conclusion =
-      report?.verified_conclusion ||
-      report?.result?.rca ||
-      report?.final_report ||
-      report?.result?.guidance ||
-      "NOT AVAILABLE";
-    const citations = report?.result?.citations || report?.citations || [];
-
     return `
 XSUP RETROSPECTIVE AUDIT — SUPPORT-OWNED FIELD REVIEW
 
@@ -2436,8 +2629,10 @@ Selected Product: ${profile.label}
 Product Selection: ${job.productSelectionSource === "manual" ? "Reviewer selected" : "Automatically detected"}${job.productConfidence ? ` (${job.productConfidence} confidence)` : ""}
 
 PURPOSE
-TACO already performs broad technical case analysis. Do NOT create another general SFDC case-quality review.
-Use TACO plus ORIGINAL Jira/SFDC evidence to make the product-specific Support-owned retrospective decision.
+Perform the product-specific Support-owned retrospective review for this ticket. Do NOT create another general SFDC case-quality review.
+The current Case Chat is already attached to the applicable TACopilot investigation. Use the CURRENT TACO analysis plus the COMPLETE Jira/Engineering, Salesforce case history, and knowledge/reference material actually available to this investigation.
+Do NOT require Jira/SFDC comments, the TACO conclusion, or case-history transcripts to be repeated inside this prompt. Inspect the native investigation context yourself.
+XSUP Auditor supplies the product policy, trusted saved-field boundary, allowed values and output contract; Case Chat supplies the native case/TACO context.
 
 PRODUCT POLICY
 ${profile.policy}
@@ -2461,20 +2656,29 @@ STRUCTURED SFDC/TACOPILOT TAXONOMY
 ${formatProductTaxonomy(evidence)}
 
 SOURCE CONTROL
-1. TACO is DERIVED TECHNICAL ANALYSIS and can synthesize/search the case.
-2. Original Jira/Engineering and SFDC records are ORIGINAL CASE EVIDENCE.
-3. A field verdict must be supported by original evidence when claiming what Engineering/TAC/customer confirmed.
-4. TACO-generated Customer Response is not proof a message was actually sent.
-5. Selected excerpts cannot prove that something never happened.
-6. If evidence is insufficient, use UNDETERMINED. Do not guess.
-7. Distinguish confirmed facts from TACO inference.
-8. If you use wording such as "abnormal", "inconsistent", "worse than expected", "customer-specific", or similar, immediately explain the concrete evidence that justifies it.
-9. Do not score TAC effort, responsiveness, delay, handoffs, or case ownership unless a fact directly changes a Support-owned field decision or knowledge action.
-10. Do not infer AI usage.
-11. Avoid subjective labels such as lazy, careless, poor engineer, weak escalation, etc.
+1. TACO/Case Chat is DERIVED TECHNICAL ANALYSIS and discovery/synthesis context; it is not authoritative evidence by itself.
+2. Jira/Engineering and Salesforce records available to the investigation are ORIGINAL CASE EVIDENCE. Maintained KCS/docs, approved internal guides/runbooks and authoritative vendor documentation can support reusable knowledge claims.
+3. Trace material claims to the underlying Jira/SFDC/KCS/documentation/Engineering source when available. Do not cite a generated Audit, generated KCS, TACO summary or Case Chat synthesis as the sole authority for reusable product behavior.
+4. A field verdict must be supported by underlying evidence when claiming what Engineering/TAC/customer confirmed.
+5. TACO-generated Customer Response is not proof a message was actually sent.
+6. Absence from an excerpt/search result is not proof that an event or knowledge article does not exist.
+7. If evidence is insufficient, use UNDETERMINED rather than filling the gap with a plausible assumption.
+8. Distinguish confirmed root cause from hypotheses, related troubleshooting findings and alternative failure modes.
+9. Do not introduce exact timings, prevalence/frequency claims, version scope, commands, API behavior, datasets/schemas or operational guarantees unless the available underlying source supports them. For human-facing Audit summaries/Review Paste, prefer the supported objective or action at a safe level when the exact command/API/schema/path/timing is only case-specific, historical, internal-only, or otherwise still needs current validation. Exact runnable/configuration details (CLI, PowerShell, registry keys/values, XQL/SQL, API routes/payloads, file paths, service commands, version-specific upgrade targets) may be written as direct imperative guidance only when current maintained public/approved guidance or explicit current Engineering authority establishes that exact scope. Otherwise state the supported objective, label the exact detail as case-observed/historical where useful, and say that current syntax/scope must be validated before reuse.
+10. Keep backend implementation identifiers and privileged/internal mechanics (for example feature-flag names, pod/container/namespace names, production database/resource identifiers, elevated roles, internal routing/component names, or raw backend metadata fields) out of human-facing Audit summaries and Review Paste unless maintained public/approved documentation explicitly makes that exact detail part of the supported reusable workflow. Preserve useful internal detail only in the detailed evidence/context.
+11. If you use wording such as "abnormal", "inconsistent", "worse than expected", "customer-specific", or similar, immediately explain the concrete evidence that justifies it.
+12. Do not score TAC effort, responsiveness, delay, handoffs, or case ownership unless a fact directly changes a Support-owned field decision or knowledge action.
+13. Do not infer AI usage or use subjective labels such as lazy, careless, poor engineer or weak escalation.
 
 EXPLANATION STANDARD — SME / ENGINEER FRIENDLY
 The human-facing review is a lessons-learned decision aid, not a field-acquisition report.
+
+APPLICABLE SUPPORT-OWNED FIELD CONTRACT — USE EXACT VALUES FOR NEW RECOMMENDATIONS
+Only evaluate field categories governed by the selected product policy. Do not review a field merely because another product has that field.
+${auditApplicableFieldContract(profile)}
+- Select only an exact configured value from the applicable field's own list. Do not rename, normalize, combine, or transfer values between categories.
+- If evidence supports a concept but no exact configured value can be selected safely, return UNDETERMINED for that recommendation and explain why.
+- Knowledge Action is a separate decision and must not influence the Support-owned field classification.
 The first duty is to describe the ACTUAL REPORTED ISSUE precisely. Do not replace the customer-visible symptom with the later root cause. State what changed, what the customer expected Cortex to show/do, and what Cortex actually showed/did not show. Example pattern: "The endpoint/user was moved from OU A to OU B, but Cortex continued to show/use the old OU association and therefore kept the old policy." Only after that, explain the findings/root cause.
 For every applicable audited field:
 - Correct / Expected Value: the technically supported value.
@@ -2483,7 +2687,7 @@ For every applicable audited field:
 - If the current saved value is unavailable, DO NOT discuss "Not verified", "verify saved value", field acquisition, or lookup status in the human-facing recommendation. The tool will keep that internally.
 - TAC Learning: what TAC/SME should recognize earlier next time.
 - TAC Action Item: one concrete preventive triage/checklist/documentation action that reduces repeat investigation, avoidable escalation, or misclassification in future tickets. This is NOT a Jira-field verification instruction.
-- Immediate Operational Guidance: preserve case-supported practical steps that directly affect the customer's outcome (for example logoff/logon to reprioritize synchronization). Do not bury these only in detailed evidence.
+- Immediate Operational Guidance: preserve case-supported practical steps that directly affect the customer's outcome (for example logoff/logon to reprioritize synchronization). Do not bury these only in detailed evidence. If the practical step contains an exact command, registry/config value, query, API contract, service action, file path or version-specific target that is not established by current maintained authority, present the objective at a safe level and explicitly require current validation of the exact detail before reuse.
 - If logoff/logon or another interactive-session action can reprioritize synchronization, explicitly state that it does NOT guarantee a specific completion time or sub-hour policy transition unless a current authoritative source explicitly provides that guarantee.
 CRITICAL: Do NOT put retrospective policy mechanics, eligibility rules, schema names, lookup contract names, field-fetch failures, UNAVAILABLE status, prompt behavior, or internal implementation details in human-facing Why/Learning/Action.
 If the recommended value is something other than the normal retrospective trigger (for example a confirmed defect is Fixed rather than Functions as designed), explain the technical evidence for that alternate value with enough detail for an SME to accept the decision quickly.
@@ -2496,36 +2700,30 @@ Engineering Confirmation: YES / NO / PARTIAL / UNDETERMINED
 TECHNICAL CONCLUSION EVIDENCE means whether the technical conclusion itself is supported. It is not a TAC performance score and does not by itself decide whether a Support-owned field is correct.
 ENGINEERING CONFIRMATION requires original Engineering/Jira evidence; TACO synthesis alone is not Engineering confirmation.
 
-TACO VERIFIED CONCLUSION
-${conclusion}
-
-If the TACO verified conclusion/reference material above is unexpectedly unavailable, do not complete the field classification. Return UNDETERMINED and state that current TACO Analysis is required.
-
-TACO REFERENCE COUNTS
-Hypotheses: ${report?.hypotheses?.length || 0}
-Citations: ${citations.length}
-Recommended Actions: ${(report?.result?.recommended_actions || []).length}
-
-COMPLETE ORIGINAL-EVIDENCE COUNTS
-Jira comments: ${evidence.jira_comments.length}
-SFDC TAC-public: ${evidence.sfdc_tac_public.length}
-SFDC customer-public: ${evidence.sfdc_customer_public.length}
-SFDC internal: ${evidence.sfdc_internal.length}
-
-${formatRecords("ORIGINAL JIRA / ENGINEERING EVIDENCE", selected.jira)}
-
-${formatRecords("ORIGINAL SFDC INTERNAL EVIDENCE", selected.internal)}
-
-${formatRecords("ORIGINAL TAC → CUSTOMER PUBLIC EVIDENCE", selected.tac_public)}
-
-${formatRecords("ORIGINAL CUSTOMER → TAC PUBLIC EVIDENCE", selected.customer_public)}
-
 XSUP RETROSPECTIVE REVIEW
 Review the case from the TAC engineer's position at the time the XSUP was created. This is NOT a future troubleshooting runbook. Explain what TAC had already established, why escalation was or was not justified, what Engineering uniquely added, and whether existing knowledge/cases could reasonably have shortened or avoided the escalation.
 - TAC Work Before XSUP: summarize only troubleshooting/evidence actually performed or established before/during escalation from original Jira/SFDC evidence. Do not turn this into a generic checklist.
 - XSUP Escalation Assessment: APPROPRIATE / PARTIAL / AVOIDABLE, followed by a concise evidence-backed reason.
 - Could XSUP Have Been Avoided: YES / PARTIAL / NO. YES/PARTIAL requires a specific prior answer/check that was available; NO requires explaining what Engineering-only evidence/confirmation was still necessary.
 - Engineering Contribution: what Engineering/backend access proved or changed that TAC could not establish alone.
+
+BACKEND / SUPPORT TOOL ACCESS REVIEW — MANDATORY WHEN ENGINEERING OR BACKEND VISIBILITY WAS USED
+When Engineering, privileged backend access, internal-only logs, database access, cloud-console access, elevated queries, or another non-TAC capability contributed materially to the answer, explicitly determine the access boundary instead of assuming the XSUP was either necessary or avoidable.
+1. Identify the decisive information obtained through Engineering/backend access.
+2. Determine whether that information was genuinely Engineering-only at the time of escalation.
+3. Check whether a Support-accessible capability already existed that could have provided materially the same answer: approved TAC tool, dashboard, diagnostic, product UI, supported API, supported query, log source, runbook, maintained documentation, or other authorized workflow.
+4. If such a capability existed, determine whether it was available at the time, accessible/authorized for TAC, sufficiently documented/discoverable, and capable of producing the decisive evidence without unsafe privilege expansion.
+5. Do NOT conclude that TAC should receive backend/production access merely because Engineering used it. Respect security, privacy, authorization and operational boundaries.
+6. Classify exactly one Backend / Tool Access Assessment:
+   - ENGINEERING DEPENDENCY — decisive evidence genuinely required Engineering/backend-only visibility or action.
+   - SUPPORT TOOL AVAILABLE — an authorized Support-accessible capability existed and could reasonably have produced the decisive evidence.
+   - SUPPORT TOOL / WORKFLOW GAP — a Support-accessible capability existed, but discoverability, documentation, access workflow, training or standard triage use was insufficient.
+   - CAPABILITY GAP — no suitable Support-accessible capability existed; a reusable Support diagnostic/tooling capability may be worth evaluating.
+   - NOT APPLICABLE — no material Engineering/backend-only visibility was used.
+   - UNDETERMINED — available evidence cannot establish the access/tool boundary safely.
+7. Reflect this assessment consistently in Could XSUP Have Been Avoided, Earlier Narrowing, TAC Learning, Retrospective Improvement and Management Signal/Learning.
+8. A backend/tool-access finding does NOT automatically justify CREATE KCS. If the main gap is tool discoverability or an internal investigation workflow, prefer NO KNOWLEDGE ACTION or CREATE/UPDATE RUNBOOK only when a distinct maintained workflow gap is established. If the issue is a missing Support diagnostic capability rather than missing reusable knowledge, keep the Knowledge Action evidence-bounded and capture the capability need in Management Learning / Action.
+
 - Existing Prior Match: DIRECT / PARTIAL / NONE / UNDETERMINED. Inspect the CONTENT of any candidate prior KCS/case/guide available to the investigation; title similarity alone is not enough.
 - Best Prior Reference: exact title + ID + DIRECT LINK when identified. If a URL is available, include it so the reviewer can open the source without searching.
 - What Was Already Known: the specific reusable answer already present in that source.
@@ -2533,16 +2731,26 @@ Review the case from the TAC engineer's position at the time the XSUP was create
 - Prior Knowledge Use Evidence: concise evidence for YES/NO, or why the record is insufficient and therefore UNCLEAR.
 - Knowledge Availability: EXISTS INTERNALLY / EXISTS IN SALESFORCE KCS / PARTIAL / ABSENT / UNDETERMINED. A good Confluence/internal guide means knowledge is not absent merely because no Salesforce KCS exists.
 - Knowledge Channel Gap: identify whether the real gap is discoverability/distribution (for example, clear internal Confluence guidance exists but no equivalent Salesforce KCS/customer-facing article is established). If so, say so explicitly.
+- Knowledge Source Coverage: report which source classes were ACTUALLY available/searched for this retrospective: Salesforce KCS; maintained product/Admin/Tech documentation; Confluence/internal guides; runbooks; prior cases/Jira/Engineering; and Slack/internal conversations. Use CHECKED, NOT AVAILABLE, or NOT SEARCHED for each class. Never claim Slack/internal-conversation search unless such source material was actually available to this Case Chat/investigation. A missing result from an unavailable source is not proof that no knowledge exists.
 - Could Prior Knowledge Have Narrowed Earlier: YES / PARTIAL / NO, with a concise reason.
 - Earlier Narrowing Possible: YES / PARTIAL / NO. If YES/PARTIAL, state the precise missed/late recognition and why it mattered. If NO, explain which decisive evidence was unavailable until Engineering became involved.
 - Retrospective Improvement: one concise process/knowledge improvement that follows from the review.
 Do not score people, responsiveness, ownership, or effort. Do not output future collection lists unless a missing item directly explains why the escalation could not be resolved earlier.
 
 KNOWLEDGE DECISION — AUDIT-LED DESTINATION SELECTION
+- First apply a knowledge-worthiness gate: determine whether there is a durable, non-obvious, reusable knowledge gap. A basic TAC check, ordinary troubleshooting step, user/configuration lookup, case-specific mistake, one-off misconfiguration, or avoidable escalation does NOT by itself justify a maintained knowledge artifact. If existing maintained material is sufficient or the main learning is TAC enablement/workflow/discoverability, prefer NO KNOWLEDGE ACTION or an internal workflow/runbook only when that separate gap is established.
+- "No relevant Salesforce KCS identified" is NOT by itself a reason to CREATE KCS. Search absence is not proof that no KCS exists.
 - The retrospective Audit is the PRIMARY decision-maker for downstream knowledge. Before selecting an action, inspect the actual content available to this investigation across Salesforce KCS, maintained Admin/Tech/product documentation, Confluence/internal guides, runbooks, Known Issue/Release Note material, prior cases and Jira/Engineering evidence. Do not defer the basic destination decision to the later KCS-generation flow.
 - Choose the BEST destination for the reusable gap. Do not force a KCS-family artifact when a different maintained destination is the justified action, and do not inject a hidden companion artifact after the Audit. The later Knowledge stage may validate/reconcile the selected artifact, but it must not invent an additional artifact type that the Audit did not recommend.
 - UPDATE EXISTING KCS: use ONLY after inspecting the actual CONTENT of a specific existing Salesforce KCS identified by exact title + ID/link. Compare symptom/task, cause/meaning, checks/procedure, resolution/workaround/action and verification. Title/ID similarity alone is insufficient. State what the KCS already covers and the material content that is missing. If candidate content is unavailable, do NOT guess an update target.
-- CREATE KCS: use when a reusable TAC/customer support article is warranted and no substantially matching Salesforce KCS is established from inspected content. If the validated answer already exists in Confluence, a runbook, Engineering notes or another non-Salesforce source, describe this as a Salesforce/discoverability/distribution gap rather than claiming the technical knowledge is absent.
+- CREATE KCS: use when a reusable TAC/customer support article is warranted and no substantially matching Salesforce KCS is established from inspected content. If the validated answer already exists in Confluence, a runbook, Engineering notes or another non-Salesforce source, describe this as a Salesforce/discoverability/distribution gap rather than claiming the technical knowledge is absent. For every CREATE KCS decision, identify the proposed searchable symptom/error/task/behavior target, the closest existing knowledge with title/ID/link when available, what that source already covers, the exact reusable gap still missing, and why CREATE is better than UPDATE EXISTING KCS or NO KNOWLEDGE ACTION. Do not return a generic reason such as "a searchable KCS is the best vehicle" without the case-specific target and gap.
+- SALESFORCE KCS MERGEABILITY GATE — MANDATORY whenever either (a) Existing KCS Content Match = PARTIAL, OR (b) a specific Salesforce KCS is identified and the Audit describes meaningful content that article already covers. The gate cannot be bypassed by labeling the match NONE/UNDETERMINED while simultaneously describing reusable coverage from that same Salesforce KCS.
+  1. Treat UPDATE EXISTING KCS as the default when the missing reusable content can be incorporated by broadening the title/search terms, adding a symptom variant, adding a cause/check/resolution subsection, or clarifying scope without changing the article's core task/audience.
+  2. Choose CREATE KCS only when the proposed article is a materially distinct reusable support task/symptom/workflow/audience and merging it into the existing article would materially confuse readers, mix unrelated procedures, or make the existing article unreasonably broad.
+  3. Discoverability/search-keyword differences alone are not sufficient for CREATE if the existing article can be safely broadened.
+  4. Output Existing KCS Mergeability = MERGEABLE / DISTINCT / UNDETERMINED / NOT APPLICABLE. For CREATE KCS when a specific Salesforce KCS has meaningful inspected coverage, this MUST be DISTINCT and Why Not Merge Into Existing KCS must give the concrete scope/task/audience reason. For UPDATE EXISTING KCS with overlapping coverage, use MERGEABLE.
+  5. If a specific Salesforce KCS has meaningful inspected coverage, Existing KCS Content Match must be reconciled with that evidence: use DIRECT/PARTIAL when the same reusable task is covered to any material degree; use NONE only when the article is genuinely about a materially different task despite superficial/common-product overlap, and still mark Mergeability = DISTINCT with the reason.
+  6. If mergeability cannot be established from inspected article content, use UNDETERMINED and do not auto-create a separate KCS solely from title/search differences.
 - UPDATE ADMIN/TECH GUIDE: this may be PRIMARY when the real gap belongs in maintained administrator/product documentation. It is NOT implied by "Functions as designed", architecture, configuration, reusable guidance, or the existence of a workaround. Recommend it only when all are substantially true:
   1. the guidance is broadly reusable beyond the support symptom/case;
   2. it is administrator-facing behavior, prerequisite, configuration expectation, architecture/design limit, migration behavior, permission dependency, deployment guidance or other proactive product-use guidance;
@@ -2595,6 +2803,8 @@ Return EXACTLY this structure:
 
 **TAC Action Item:** [one concrete preventive workflow/checklist/documentation action for future similar tickets; do not tell TAC to verify an unavailable saved Jira field]
 
+**TAC Learning Outcome:** [NONE / ENABLEMENT / CASE STUDY / WORKFLOW IMPROVEMENT / ESCALATION BOUNDARY / MIXED / UNDETERMINED — descriptive only; this does not change the Knowledge Action]
+
 ## XSUP Retrospective Review
 
 **TAC Work Before XSUP:** [what TAC actually checked/established from the case record before or during escalation; concise factual summary, not a future checklist]
@@ -2604,6 +2814,14 @@ Return EXACTLY this structure:
 **Could XSUP Have Been Avoided:** [YES / PARTIAL / NO — explain why]
 
 **Engineering Contribution:** [what Engineering/backend visibility uniquely confirmed, disproved, changed, or enabled]
+
+**Backend / Tool Access Assessment:** [ENGINEERING DEPENDENCY / SUPPORT TOOL AVAILABLE / SUPPORT TOOL / WORKFLOW GAP / CAPABILITY GAP / NOT APPLICABLE / UNDETERMINED]
+
+**Backend / Tool Access Evidence:** [what decisive evidence required privileged/backend access, or why no such boundary applied; distinguish facts from inference]
+
+**Support-Accessible Alternative:** [exact authorized TAC tool/dashboard/API/query/log source/runbook/workflow that could have produced materially the same evidence at the time, with direct reference/link when available; otherwise "None identified" or "UNDETERMINED"]
+
+**Tool / Workflow Gap:** [if applicable, state whether the real gap was discoverability, documentation, training, access workflow, missing diagnostic capability, or "None identified". Do not recommend exposing privileged backend access merely because Engineering used it.]
 
 **Existing Prior Match:** [DIRECT / PARTIAL / NONE / UNDETERMINED]
 
@@ -2618,6 +2836,8 @@ Return EXACTLY this structure:
 **Knowledge Availability:** [EXISTS INTERNALLY / EXISTS IN SALESFORCE KCS / PARTIAL / ABSENT / UNDETERMINED]
 
 **Knowledge Channel Gap:** [for example: "Validated guidance exists in internal Confluence, but equivalent Salesforce KCS/customer-facing coverage was not established; the action is packaging/distribution, not creation of knowledge from zero." Or "None identified".]
+
+**Knowledge Source Coverage:** [Salesforce KCS: CHECKED/NOT AVAILABLE/NOT SEARCHED; Maintained product/Admin/Tech docs: CHECKED/NOT AVAILABLE/NOT SEARCHED; Confluence/internal guides: CHECKED/NOT AVAILABLE/NOT SEARCHED; Runbooks: CHECKED/NOT AVAILABLE/NOT SEARCHED; Prior cases/Jira/Engineering: CHECKED/NOT AVAILABLE/NOT SEARCHED; Slack/internal conversations: CHECKED/NOT AVAILABLE/NOT SEARCHED. Use CHECKED only when that source class was actually available/searched.]
 
 **Could Prior Knowledge Have Narrowed Earlier:** [YES / PARTIAL / NO — concise reason based on content and availability, not title similarity]
 
@@ -2635,99 +2855,7 @@ Return EXACTLY this structure:
 
 ## Support-Owned Field Decisions
 
-**Reviewed Fields:** [list ONLY fields that are applicable under the selected product policy, or "None — Out of Scope", or "UNDETERMINED"]
-
-**Resolution Change Needed:** [NO / YES / VERIFY SAVED VALUE / VERIFY + CHANGE / NOT APPLICABLE]
-
-**RCA Change Needed:** [NO / YES / VERIFY SAVED VALUE / VERIFY + CHANGE / NOT APPLICABLE]
-
-**Fix Type Change Needed:** [NO / YES / VERIFY SAVED VALUE / VERIFY + CHANGE / NOT APPLICABLE]
-
-**Label / Flag Change Needed:** [NO / YES / VERIFY SAVED VALUE / VERIFY + CHANGE / NOT APPLICABLE]
-
-### Resolution Review
-[Include ONLY if Resolution is applicable under the selected product policy. Otherwise omit this subsection.]
-
-**Resolution Current Value:** [exact trusted structured Jira Resolution value, or "Not verified"]
-
-**Resolution Technical Assessment:** [concise assessment of what the value should be]
-
-**Resolution Verdict:** [CORRECT / INCORRECT / TECHNICALLY CORRECT / TECHNICALLY INCORRECT / CURRENT VALUE NEEDED]
-
-**Resolution Change Required:** [NO / YES / VERIFY SAVED VALUE / VERIFY + CHANGE]
-
-**Resolution Recommended Value:** [exact correct/expected value]
-
-**Resolution Why:** [1-2 concise case-specific technical sentences only; omit policy/lookup mechanics]
-
-**Resolution Detailed Explanation:** [detailed technical explanation for SME/Engineering review]
-
-**Resolution Supporting Evidence:** [2-5 strongest original evidence points]
-
-**Resolution Support Action:** [one concise action; if verification is needed say "Verify saved Jira Resolution on ${xsup}"]
-
-### RCA Review
-[Include ONLY if RCA is applicable under the selected product policy. Otherwise omit this subsection.]
-
-**RCA Current Value:** [exact trusted structured Jira RCA value, or "Not verified"]
-
-**RCA Technical Assessment:** [concise assessment of what the value should be]
-
-**RCA Verdict:** [CORRECT / INCORRECT / TECHNICALLY CORRECT / TECHNICALLY INCORRECT / CURRENT VALUE NEEDED]
-
-**RCA Change Required:** [NO / YES / VERIFY SAVED VALUE / VERIFY + CHANGE]
-
-**RCA Recommended Value:** [exact correct/expected value]
-
-**RCA Why:** [1-2 concise case-specific technical sentences only; omit policy/lookup mechanics]
-
-**RCA Detailed Explanation:** [detailed technical explanation for SME/Engineering review]
-
-**RCA Supporting Evidence:** [strongest original evidence]
-
-**RCA Support Action:** [one concise action; if verification is needed say "Verify saved Jira RCA on ${xsup}"]
-
-### Fix Type Review
-[Include ONLY if Fix Type is applicable under the selected product policy. Otherwise omit this subsection.]
-
-**Fix Type Current Value:** [exact trusted structured Jira Fix Type value, or "Not verified"]
-
-**Fix Type Technical Assessment:** [concise assessment of what the value should be]
-
-**Fix Type Verdict:** [CORRECT / INCORRECT / TECHNICALLY CORRECT / TECHNICALLY INCORRECT / CURRENT VALUE NEEDED]
-
-**Fix Type Change Required:** [NO / YES / VERIFY SAVED VALUE / VERIFY + CHANGE]
-
-**Fix Type Recommended Value:** [exact correct/expected value]
-
-**Fix Type Why:** [1-2 concise case-specific technical sentences only; omit policy/lookup mechanics]
-
-**Fix Type Detailed Explanation:** [detailed technical explanation for SME/Engineering review]
-
-**Fix Type Supporting Evidence:** [strongest original evidence]
-
-**Fix Type Support Action:** [one concise action; if verification is needed say "Verify saved Jira Fix Type on ${xsup}"]
-
-### Flag / Label Review
-[Include ONLY if Flag/Label is applicable under the selected product policy. Otherwise omit this subsection.]
-
-**Flag / Label Current Value:** [exact trusted structured Jira Labels value, or "Not verified"]
-
-**Flag / Label Technical Assessment:** [concise assessment of what the value should be]
-
-**Flag / Label Verdict:** [CORRECT / INCORRECT / TECHNICALLY CORRECT / TECHNICALLY INCORRECT / CURRENT VALUE NEEDED]
-
-**Flag / Label Change Required:** [NO / YES / VERIFY SAVED VALUE / VERIFY + CHANGE]
-
-**Flag / Label Recommended Value:** [exact correct/expected value]
-
-**Flag / Label Why:** [1-2 concise case-specific technical sentences only; omit policy/lookup mechanics]
-
-**Flag / Label Detailed Explanation:** [detailed technical explanation for SME/Engineering review]
-
-**Flag / Label Supporting Evidence:** [strongest original evidence]
-
-**Flag / Label Support Action:** [one concise action; if verification is needed say "Verify saved Jira Labels on ${xsup}"]
+${auditFieldOutputContract(profile, xsup)}
 
 ## Supporting Context for the Field Decision
 
@@ -2735,7 +2863,23 @@ Return EXACTLY this structure:
 
 **Why It Matters:** [how this context affects—or does not affect—the field decision]
 
+## Existing Knowledge Review
+
+**Existing Salesforce KCS Candidates:** [For every meaningful inspected candidate: exact title + article ID + direct Salesforce Knowledge link + DIRECT/PARTIAL/NONE content match. If none, "None identified".]
+
+**Best Existing Knowledge Reference:** [best KCS/doc/guide/runbook/prior case title + ID + direct link, or "None identified"]
+
+**Existing Coverage:** [specific reusable content already covered, or "None established"]
+
+**Remaining Reusable Gap:** [specific durable missing content, or "None identified"]
+
+**Why Existing Knowledge Is Not Sufficient:** [required when recommending CREATE/UPDATE; otherwise "Not applicable"]
+
 ## Knowledge Action
+
+**Knowledge Worthiness:** [YES / NO / UNDETERMINED]
+
+**Knowledge Worthiness Reason:** [does a durable, non-obvious reusable gap actually exist?]
 
 **Primary Knowledge Action:** [CREATE KCS / UPDATE EXISTING KCS / UPDATE ADMIN/TECH GUIDE / CREATE/UPDATE RUNBOOK / KNOWN ISSUE/RELEASE NOTE / NO KNOWLEDGE ACTION / UNDETERMINED]
 
@@ -2755,11 +2899,31 @@ Return EXACTLY this structure:
 
 **Existing KCS Content Match:** [DIRECT / PARTIAL / NONE / UNDETERMINED / NOT APPLICABLE]
 
+**Existing KCS Mergeability:** [MERGEABLE / DISTINCT / UNDETERMINED / NOT APPLICABLE — mandatory when Existing KCS Content Match = PARTIAL OR when a specific Salesforce KCS has meaningful inspected coverage]
+
+**Why Not Merge Into Existing KCS:** [required for CREATE KCS whenever a specific Salesforce KCS has meaningful inspected coverage; explain the materially distinct task/symptom/workflow/audience and why extending the existing article would confuse or over-broaden it; otherwise "Not applicable"]
+
 **Existing KCS Covered Content:** [what the candidate actually already explains, based on its content; otherwise "Not applicable"]
 
 **Existing KCS Missing Content:** [what material learning would need to be added; otherwise "Not applicable"]
 
-**Primary Knowledge Reason:** [why this artifact format is the best primary destination for the learning]
+**Knowledge Action Target Type:** [New Salesforce KCS / Existing Salesforce KCS / Admin-Tech Guide / Runbook / Known Issue-Release Note / None / Undetermined]
+
+**Knowledge Action Target:** [exact title/page/article/guide/runbook/location + ID/link when available; for CREATE KCS give a proposed searchable symptom/error/task/behavior topic, not a generic "Salesforce KCS" label]
+
+**Current Target Coverage:** [what that target already covers, or "Not applicable"]
+
+**Target Gap / Required Change:** [what must be created/added/clarified, or "Not applicable"]
+
+**Why This Destination:** [explicitly explain why this destination is better than the relevant alternatives]
+
+**Why Create vs Update / No Action:** [required for CREATE KCS; otherwise "Not applicable"]
+
+**Why Update vs Create:** [required for UPDATE EXISTING KCS; otherwise "Not applicable"]
+
+**Sections to Update:** [required for UPDATE EXISTING KCS when established; otherwise "Not applicable"]
+
+**Primary Knowledge Reason:** [concise evidence-backed reason]
 
 **Secondary Knowledge Reason:** [why the secondary artifact adds value, or "NONE"]
 
@@ -2849,7 +3013,9 @@ Do not add sections outside this template.
     if (!job) return job;
     const action = normalizeDecision(job.knowledgeAction || "");
     const evidence = cleanText([
-      job.existingKcsCandidate, job.existingKcsCoveredContent, job.existingKcsMissingContent,
+      job.existingSalesforceKcsCandidates, job.existingKcsCandidate, job.existingKcsCoveredContent, job.existingKcsMissingContent,
+      job.bestExistingKnowledgeReference, job.existingCoverageDetail, job.remainingReusableGap, job.whyExistingKnowledgeInsufficient,
+      job.knowledgeActionTarget, job.targetGapRequiredChange, job.whyCreateVsUpdateNoAction, job.whyUpdateVsCreate,
       job.priorReference, job.priorKnown, job.managementLearning, job.knowledgeDecisionExplanation,
       job.primaryKnowledgeReason, job.secondaryKnowledgeReason
     ].filter(Boolean).join(" "));
@@ -3042,11 +3208,206 @@ Do not add sections outside this template.
     return {...parsed, valid:false, reason:route.reason, issues:[...(parsed.issues || []), route.reason]};
   }
 
+  function cleanExistingKcsIdentity(value) {
+    return cleanText(value || "")
+      .replace(/\[R\d+(?:\s*[,;]\s*R\d+)*\]/gi, " ")
+      .replace(/\*\*/g, "")
+      .replace(/[([{]\s*$/, "")
+      .replace(/\s+[—–-]\s*$/, "")
+      .replace(/:\s*$/, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
+
+  function canonicalSalesforceKnowledgeUrl(value) {
+    const raw = String(value || "");
+    if (!cleanText(raw)) return "";
+
+    // Salesforce Knowledge markdown frequently arrives as
+    // [https://.../Knowledge__kav/<id>/view](https://.../Knowledge__kav/<id>/view).
+    // Extract only one URL token and rebuild the canonical Lightning record path so
+    // trailing Markdown residue can never leak into href/display text.
+    const kav = raw.match(/https?:\/\/[^\s<>'"`\]\)]+\/lightning\/r\/Knowledge__kav\/(ka[A-Za-z0-9]+)\/view\b/i)
+      || raw.match(/https?:\/\/[^\s<>'"`\]\)]+\/Knowledge__kav\/(ka[A-Za-z0-9]+)(?:\/view)?\b/i);
+    if (kav) {
+      const parsed = safeUrl(kav[0]);
+      if (parsed) {
+        try {
+          const u = new URL(parsed, location.href);
+          if (!/(?:\.lightning\.force\.com|\.my\.salesforce\.com)$/i.test(u.hostname)) return "";
+          return `${u.origin}/lightning/r/Knowledge__kav/${kav[1]}/view`;
+        } catch (_) {}
+      }
+    }
+
+    const urls = raw.match(/https?:\/\/[^\s<>'"`\]\)]+/gi) || [];
+    for (const candidate0 of urls) {
+      const candidate = candidate0.replace(/[),.;:!?]+$/g, "");
+      const url = safeUrl(candidate) || "";
+      if (!url) continue;
+      try {
+        const u = new URL(url, location.href);
+        if (/\/KCSArticleDetail\//i.test(url) && /paloaltonetworks\.com$/i.test(u.hostname)) return url;
+        if (/knowledgebase\.paloaltonetworks\.com$/i.test(u.hostname)) return url;
+      } catch (_) {}
+    }
+    return "";
+  }
+
+  function isSalesforceKnowledgeUrl(value) {
+    return Boolean(canonicalSalesforceKnowledgeUrl(value));
+  }
+
+  function findSalesforceKnowledgeUrl(value) {
+    return canonicalSalesforceKnowledgeUrl(value);
+  }
+
+  function parseExistingKcsReferenceBlock(value) {
+    const raw = String(value || "");
+    if (!cleanText(raw)) return {title:"", articleId:"", link:"", raw:""};
+    const section = extractKnowledgeSection(raw, ["Existing Knowledge Reference"]) || raw;
+    const lines = String(section || "").split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    let title = "", articleId = "", link = "";
+    const cleanField = v => cleanExistingKcsIdentity(String(v || "").replace(/^[-*+]\s*/, ""));
+    for (const rawLine of lines) {
+      const line = rawLine.replace(/^[-*+]\s*/, "").replace(/\*\*/g, "").trim();
+      let m;
+      if (!title && (m = line.match(/^Title\s*:\s*(.+)$/i))) title = cleanField(m[1]);
+      else if (!articleId && (m = line.match(/^(?:Article\s+ID|KCS\s+ID|Article)\s*:\s*(.+)$/i))) articleId = cleanField(m[1]);
+      else if (!link && (m = line.match(/^Link\s*:\s*(.+)$/i))) {
+        link = findSalesforceKnowledgeUrl(m[1] || "");
+      }
+    }
+    const collapsed = cleanText(section || "");
+    if (!title) {
+      const m = collapsed.match(/(?:^|\s)Title\s*:\s*(.*?)(?=\s+(?:Article\s+ID|KCS\s+ID|Link)\s*:|$)/i);
+      if (m) title = cleanField(m[1]);
+    }
+    if (!articleId) {
+      const m = collapsed.match(/(?:^|\s)(?:Article\s+ID|KCS\s+ID|Article)\s*:\s*(.*?)(?=\s+(?:Link|Title)\s*:|$)/i);
+      if (m) articleId = cleanField(m[1]);
+    }
+    if (!link) link = findSalesforceKnowledgeUrl(section || raw);
+    if (!title && /Salesforce\s+KCS\s+Article\s*:/i.test(collapsed)) {
+      const m = collapsed.match(/Salesforce\s+KCS\s+Article\s*:\s*(.*?)(?=\s+(?:https?:\/\/|\bka\w+\b)|$)/i);
+      if (m) title = cleanField(m[1]);
+    }
+    if (!articleId && link) articleId = cleanField(link.match(/\/Knowledge__kav\/(ka[^/]+)(?:\/|$)/i)?.[1] || "");
+    if (!articleId) articleId = cleanField(collapsed.match(/\b(ka[A-Za-z0-9]{8,})\b/i)?.[1] || "");
+    return {title, articleId, link, raw:collapsed};
+  }
+
+  function existingKcsReferenceDetails(job = null, artifact = "") {
+    const artifactText = String(artifact || job?.knowledgeAnswer || "");
+    const candidates = [
+      artifactText,
+      String(job?.existingKcsCandidate || ""),
+      String(job?.existingSalesforceKcsCandidates || "")
+    ].filter(Boolean);
+    let best = {title:"", articleId:"", link:"", raw:""};
+    let bestScore = -1;
+    for (const candidate of candidates) {
+      const parsed = parseExistingKcsReferenceBlock(candidate);
+      const score = (parsed.title ? 2 : 0) + (parsed.articleId ? 2 : 0) + (parsed.link ? 4 : 0);
+      if (score > bestScore) { best = parsed; bestScore = score; }
+    }
+
+    // Bind title/ID/link from the SAME canonical Salesforce Knowledge source.
+    // Never pair a KCS title with the first unrelated Jira/Case/vendor URL found
+    // elsewhere in the artifact.
+    const sourceRefs = parseKnowledgeSourceReferences(artifactText);
+    const sfKnowledge = [...sourceRefs.values()].map(ref => {
+      const provenance = knowledgeSourceProvenance(ref);
+      const urls = Array.isArray(ref?.urls) ? ref.urls : [];
+      const link = urls.map(x => canonicalSalesforceKnowledgeUrl(typeof x === "string" ? x : x?.url)).find(Boolean) || "";
+      const identity = cleanExistingKcsIdentity(ref?.identity || "");
+      const articleId = cleanExistingKcsIdentity((link.match(/\/Knowledge__kav\/(ka[^/]+)(?:\/|$)/i)?.[1]) || (identity.match(/\b(ka[A-Za-z0-9]{8,})\b/i)?.[1]) || "");
+      return {title:identity, articleId, link:canonicalSalesforceKnowledgeUrl(link), provenance};
+    }).filter(ref => /Salesforce Knowledge/i.test(ref.provenance) && (ref.title || ref.articleId || ref.link));
+
+    let matchedSource = null;
+    if (best.articleId) matchedSource = sfKnowledge.find(ref => ref.articleId && ref.articleId.toLowerCase() === best.articleId.toLowerCase()) || null;
+    if (!matchedSource && best.title && !/^Existing Salesforce KCS$/i.test(best.title)) {
+      const needle = best.title.toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+      matchedSource = sfKnowledge.find(ref => {
+        const hay = String(ref.title || "").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+        return needle && hay && (hay.includes(needle) || needle.includes(hay));
+      }) || null;
+    }
+    if (!matchedSource && sfKnowledge.length === 1) matchedSource = sfKnowledge[0];
+    if (!matchedSource && sfKnowledge.length && !best.title) matchedSource = sfKnowledge[0];
+    if (matchedSource) {
+      if (!best.title || /^Existing Salesforce KCS$/i.test(best.title)) best.title = matchedSource.title;
+      if (!best.articleId) best.articleId = matchedSource.articleId;
+      if (!best.link) best.link = matchedSource.link;
+    }
+
+    if (!best.title) {
+      const related = relatedExistingKcsRefs(artifactText);
+      if (related[0]?.identity) best.title = cleanExistingKcsIdentity(related[0].identity);
+    }
+    if ((!best.link || !best.title) && Array.isArray(job?.references)) {
+      const ref = job.references.find(r => isSalesforceKnowledgeUrl(r?.url || "") || /Salesforce\s+Knowledge|Knowledge-KCS/i.test(`${r?.title || ""} ${r?.type || ""}`));
+      if (ref) {
+        const validLink = canonicalSalesforceKnowledgeUrl(ref.url || "");
+        if (!best.link && validLink) best.link = validLink;
+        if (!best.title) best.title = cleanExistingKcsIdentity(ref.title || "");
+      }
+    }
+    best.link = canonicalSalesforceKnowledgeUrl(best.link);
+    if (!best.articleId && best.link) best.articleId = cleanExistingKcsIdentity(best.link.match(/\/Knowledge__kav\/(ka[^/]+)(?:\/|$)/i)?.[1] || "");
+    return best;
+  }
+
+  function conciseExistingKcsContext(value, maxChars = 900) {
+    const text = cleanText(String(value || "")
+      .replace(/\[R\d+(?:\s*[,;]\s*R\d+)*\]/gi, " ")
+      .replace(/\*\*/g, "")
+      .replace(/^[-*+]\s*/gm, "")
+      .replace(/^---+$/gm, " ")
+      .replace(/\s{2,}/g, " "));
+    return text ? limitHumanText(text, maxChars) : "";
+  }
+
+  function existingKcsActionContext(job = null, auditText = "") {
+    const updateArtifact = (job?.knowledgeArtifacts || []).find(x => x?.status === "completed" && (x?.type === "KCS_UPDATE" || normalizeDecision(x?.action) === "UPDATE EXISTING KCS"))?.answer || job?.knowledgeAnswer || "";
+    const ref = existingKcsReferenceDetails(job, updateArtifact);
+    const pick = (...values) => values.map(meaningfulKnowledgeText).find(Boolean) || "";
+    // This card describes the inspected EXISTING KCS, not the new CREATE target.
+    // Ignore template placeholders such as "Not applicable" and prefer explicit
+    // existing-knowledge coverage before Current Target Coverage.
+    const auditCovered = pick(
+      job?.existingCoverageDetail,
+      extractFieldBlock(auditText, "Existing Coverage"),
+      job?.existingKcsCoveredContent,
+      extractFieldBlock(auditText, "Existing KCS Covered Content"),
+      job?.priorKnown,
+      extractFieldBlock(auditText, "What Was Already Known"),
+      job?.currentTargetCoverage,
+      extractFieldBlock(auditText, "Current Target Coverage")
+    );
+    const auditMissing = pick(
+      job?.remainingReusableGap,
+      extractFieldBlock(auditText, "Remaining Reusable Gap"),
+      job?.existingKcsMissingContent,
+      extractFieldBlock(auditText, "Existing KCS Missing Content"),
+      job?.targetGapRequiredChange,
+      extractFieldBlock(auditText, "Target Gap / Required Change"),
+      job?.knowledgeGap,
+      extractFieldBlock(auditText, "Knowledge Gap")
+    );
+    const artifactCovered = updateArtifact ? extractKnowledgeSection(updateArtifact, ["Current Coverage", "Related Existing Knowledge"]) : "";
+    const artifactMissing = updateArtifact ? extractKnowledgeSection(updateArtifact, ["Gap Identified", "Sections to Update"]) : "";
+    const covered = conciseExistingKcsContext(auditCovered || artifactCovered, 900);
+    const missing = conciseExistingKcsContext(auditMissing || artifactMissing, 1100);
+    return {ref, covered, missing};
+  }
+
   function relatedExistingKcsRefs(artifact) {
     const refs = parseKnowledgeSourceReferences(String(artifact || ""));
     return [...refs.entries()]
       .filter(([,ref]) => /Salesforce Knowledge|\bKCS\b/i.test(knowledgeSourceProvenance(ref)))
-      .map(([key,ref]) => ({key, identity:cleanText(ref?.identity || key)}))
+      .map(([key,ref]) => ({key, identity:cleanExistingKcsIdentity(ref?.identity || key)}))
       .filter(x => x.identity)
       .slice(0,3);
   }
@@ -3079,40 +3440,67 @@ Do not add sections outside this template.
     const refs = relatedExistingKcsRefs(artifact);
     const existing = refs.map(x=>x.identity).filter(Boolean);
     if (!existing.length && cleanText(job?.existingKcsCandidate || "")) existing.push(cleanText(job.existingKcsCandidate));
+    const decisionCtx = knowledgeActionDecisionContext(job, job?.auditAnswer || "");
+    const relatedKnowledge = meaningfulKnowledgeText(decisionCtx.bestExisting || "");
 
     if (job?.forceCreateNewKcs || job?.existingKcsReviewerOverride) {
       return {
         recommendation: "UPDATE EXISTING KCS",
         decision: "CREATE NEW KCS ANYWAY",
-        reason: cleanText(job?.existingKcsRecommendationSummary || "") || "A substantially overlapping existing Salesforce KCS was identified, but the reviewer chose a separate new article.",
-        existing
+        reason: cleanText(job?.existingKcsRecommendationSummary || "") || decisionCtx.whyUpdate || "A substantially overlapping existing Salesforce KCS was identified, but the reviewer chose a separate new article.",
+        existing,
+        relatedKnowledge
       };
     }
     if (type === "KCS_UPDATE") {
       return {
         recommendation: "UPDATE EXISTING KCS",
         decision: "UPDATE EXISTING KCS",
-        reason: cleanText(job?.existingKcsRecommendationSummary || "") || "Existing Salesforce KCS content materially overlaps this issue and can be extended.",
-        existing
+        reason: decisionCtx.whyUpdate || cleanText(job?.existingKcsRecommendationSummary || "") || "Existing Salesforce KCS content materially overlaps this issue and can be extended.",
+        existing,
+        relatedKnowledge
       };
     }
     return {
       recommendation: "CREATE NEW KCS",
       decision: "CREATE NEW KCS",
-      reason: existing.length
-        ? "Existing KCS candidates were identified, but substantial content overlap requiring an update was not established from the available evidence."
-        : "No substantially matching Salesforce KCS was established from the available evidence.",
-      existing
+      reason: decisionCtx.whyCreate || (existing.length || relatedKnowledge
+        ? "Related existing knowledge was inspected, but its coverage does not fully address the durable reusable gap targeted by this draft."
+        : "No substantially matching maintained knowledge destination was established from the available evidence, and a durable reusable gap remains."),
+      existing,
+      relatedKnowledge
     };
   }
 
   function existingKnowledgeDecisionHtml(job, artifact, type) {
     const detail = existingKnowledgeDecisionDetails(job, artifact, type);
     if (!detail) return "";
-    const existing = detail.existing?.length
-      ? `<div><b>Existing / related KCS:</b> ${detail.existing.map(escapeHtml).join(" · ")}</div>`
-      : `<div><b>Existing / related KCS:</b> None established from available evidence</div>`;
-    return `<div class="xa-at-glance-box" style="border-left-color:#7c3aed;background:#f5f3ff;border-color:#ddd6fe"><div class="xa-at-glance-title" style="color:#6d28d9">Existing Knowledge Decision</div><div class="xa-at-glance-text"><div><b>Recommendation:</b> ${escapeHtml(detail.recommendation)}</div><div><b>Reviewer choice / output:</b> ${escapeHtml(detail.decision)}</div>${existing}<div><b>Reason:</b> ${escapeHtml(detail.reason)}</div></div></div>`;
+    const ctx = existingKcsActionContext(job, artifact);
+    const decisionCtx = knowledgeActionDecisionContext(job, job?.auditAnswer || "");
+    const ref = ctx.ref || {};
+    const explicitExistingKcs = meaningfulKnowledgeText(job?.existingKcsCandidate || job?.existingSalesforceKcsCandidates || "");
+    const useCanonicalKcs = type === "KCS_UPDATE" || Boolean(explicitExistingKcs) || Boolean(job?.forceCreateNewKcs || job?.existingKcsReviewerOverride);
+    let existing = "";
+    if (useCanonicalKcs && (ref.title || ref.articleId || ref.link)) {
+      const title = ref.title || "Existing Salesforce KCS";
+      existing += `<div><b>Existing KCS:</b> ${escapeHtml(title)}${ref.articleId ? ` · ${escapeHtml(ref.articleId)}` : ""}</div>`;
+      if (ref.link) existing += `<div><b>Link:</b> <a href="${escapeHtml(ref.link)}" target="_blank" rel="noopener noreferrer">${escapeHtml(ref.link)}</a></div>`;
+      else existing += `<div><b>Direct Salesforce KCS link:</b> Not established in the available evidence</div>`;
+    } else if (useCanonicalKcs && detail.existing?.length) {
+      existing = `<div><b>Existing / related KCS:</b> ${detail.existing.map(x=>escapeHtml(cleanExistingKcsIdentity(x))).join(" · ")}</div>`;
+    } else if (type === "KCS_DRAFT" && detail.relatedKnowledge) {
+      existing = `<div><b>Closest existing knowledge:</b> ${escapeHtml(detail.relatedKnowledge)}</div>`;
+    } else {
+      existing = `<div><b>${type === "KCS_DRAFT" ? "Closest existing knowledge" : "Existing / related KCS"}:</b> None established from available evidence</div>`;
+    }
+    const coverageText = ctx.covered || decisionCtx.covered;
+    const gapText = ctx.missing || decisionCtx.gap;
+    const target = type === "KCS_DRAFT" && decisionCtx.target ? `<div><b>New KCS target:</b> ${escapeHtml(decisionCtx.target)}</div>` : "";
+    const coverage = coverageText ? `<div><b>${type === "KCS_DRAFT" ? "Existing coverage" : "Current coverage"}:</b> ${escapeHtml(coverageText)}</div>` : "";
+    const mergeability = decisionCtx.mergeability && !/^(?:NOT APPLICABLE|NONE)$/i.test(decisionCtx.mergeability) ? `<div><b>Existing KCS mergeability:</b> ${escapeHtml(decisionCtx.mergeability)}</div>` : "";
+    const gapLabel = type === "KCS_UPDATE" ? "Update needed" : "Remaining reusable gap";
+    const gap = gapText ? `<div><b>${gapLabel}:</b> ${escapeHtml(gapText)}</div>` : "";
+    return `<div class="xa-at-glance-box" style="border-left-color:#7c3aed;background:#f5f3ff;border-color:#ddd6fe"><div class="xa-at-glance-title" style="color:#6d28d9">Existing Knowledge Decision</div><div class="xa-at-glance-text"><div><b>Recommendation:</b> ${escapeHtml(detail.recommendation)}</div><div><b>Reviewer choice / output:</b> ${escapeHtml(detail.decision)}</div>${target}${existing}${coverage}${mergeability}${gap}<div><b>Reason:</b> ${escapeHtml(detail.reason)}</div></div></div>`;
   }
 
   function knowledgeArtifactLabel(type) {
@@ -3209,6 +3597,13 @@ Evaluate the artifact as a reusable knowledge asset, not as a rewrite of one cas
 - Resolve conflicts against current maintained documentation or current SME/Engineering confirmation. If the conflict cannot be resolved, remove/generalize the disputed public claim while preserving useful sourced Engineering context in Internal Notes when appropriate.
 - Repetition is not independent corroboration when multiple cases/KCS/Confluence pages/generated artifacts may derive from the same original source. Trace claims back to the underlying evidence.
 - A generated XSUP Auditor/TACopilot/Case Chat artifact is never authoritative evidence by itself and must not be the sole source for a later reusable product claim.
+
+17. Runnable technical artifact accuracy — mandatory review pass
+- Inspect EVERY runnable/copy-paste technical block even when it looks plausible: XQL/SQL, Python/JavaScript/PowerShell/shell, CLI/integration commands, API request examples, JSON/YAML configuration, regex and other executable/configuration snippets.
+- Verify syntax, product/component, version/scope, identifiers, dataset/field/function/operator names, API method/route, configuration keys, placeholders, prerequisites/side effects, and how the reader should interpret the result when material.
+- For XQL specifically verify the dataset, dataset applicability, field names/types when material, stages/operators/functions, filters, aggregation/time syntax and expected output against a current supported schema/source.
+- Prefer an exact source-backed command/query/code example over vague wording. When authoritative documentation contains an official example, adapt that supported example rather than creating new runnable syntax from assumption.
+- A source-backed current example can remain normally cited without a visible warning. Historical/case-specific exact syntax whose current applicability is not established requires REVIEW CURRENTNESS. A material runnable example whose required identifiers/syntax cannot be supported or whose sources conflict must not be treated as publication-ready; generalize it or emit an actionable REVIEW/BLOCKER with the required validation outcome.
 `;
 
     const artifact = ({
@@ -3260,6 +3655,67 @@ KNOWN ISSUE / RELEASE NOTE QUALITY
     return `${common}\n${artifact}`.trim();
   }
 
+  function knowledgeAuditDecisionPacket(job) {
+    const audit = String(job?.auditAnswer || "");
+    const clip = (value, max = 1800) => {
+      const text = cleanText(value || "");
+      return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+    };
+    const fieldBlock = (prop, label, fallback = "", max = 1800) => clip(job?.[prop] || extractFieldBlock(audit, label) || extractField(audit, label) || fallback, max);
+    const lines = [
+      "AUDIT DECISION PACKET — ROUTING / STARTING CONTEXT ONLY",
+      "This packet preserves the validated retrospective decision without replaying the full Audit. It is NOT an authoritative technical source. Verify material technical claims against the underlying sources available to this native Case Chat investigation.",
+      `Target: ${jobDisplayKey(job)}`,
+      `Product: ${productLabel(job)}`,
+      `Requested knowledge action: ${job?.knowledgeAction || "UNDETERMINED"}`,
+      `Portfolio primary: ${job?.knowledgePortfolioPrimaryAction || job?.knowledgeAction || "UNDETERMINED"}`,
+      `Portfolio secondary: ${job?.knowledgePortfolioSecondaryAction || job?.secondaryKnowledgeAction || "NONE"}`,
+      `Initial readiness: ${job?.artifactReadiness || "NOT APPLICABLE"}`,
+      `Audit artifact type: ${fieldBlock("artifactTypeFromAudit", "Artifact Type", "Undetermined", 300)}`,
+      `Reported issue: ${fieldBlock("reportedIssue", "Reported Issue", "Not established in the Audit")}`,
+      `Technical conclusion: ${fieldBlock("technicalConclusion", "Technical Conclusion", "Not established in the Audit")}`,
+      `Immediate operational guidance: ${fieldBlock("immediateOperationalGuidance", "Immediate Operational Guidance", "None identified")}`,
+      `Important technical caveat: ${fieldBlock("importantTechnicalCaveat", "Important Technical Caveat", "None identified")}`,
+      `Backend / tool access assessment: ${fieldBlock("backendToolAccessAssessment", "Backend / Tool Access Assessment", "UNDETERMINED", 400)}`,
+      `Support-accessible alternative: ${fieldBlock("supportAccessibleAlternative", "Support-Accessible Alternative", "None identified", 1000)}`,
+      `Tool / workflow gap: ${fieldBlock("toolWorkflowGap", "Tool / Workflow Gap", "None identified", 1000)}`,
+      `Existing Salesforce KCS candidates: ${fieldBlock("existingSalesforceKcsCandidates", "Existing Salesforce KCS Candidates", "None identified")}`,
+      `Existing KCS candidate: ${fieldBlock("existingKcsCandidate", "Existing KCS Candidate", "None identified")}`,
+      `Existing KCS content match: ${fieldBlock("existingKcsContentMatch", "Existing KCS Content Match", "NOT APPLICABLE")}`,
+      `Existing KCS covered content: ${fieldBlock("existingKcsCoveredContent", "Existing KCS Covered Content", "Not applicable")}`,
+      `Existing KCS missing content: ${fieldBlock("existingKcsMissingContent", "Existing KCS Missing Content", "Not applicable")}`,
+      `Best existing knowledge reference: ${fieldBlock("bestExistingKnowledgeReference", "Best Existing Knowledge Reference", "None identified")}`,
+      `Existing coverage detail: ${fieldBlock("existingCoverageDetail", "Existing Coverage", "None established")}`,
+      `Remaining reusable gap: ${fieldBlock("remainingReusableGap", "Remaining Reusable Gap", "None identified")}`,
+      `Why existing knowledge is not sufficient: ${fieldBlock("whyExistingKnowledgeInsufficient", "Why Existing Knowledge Is Not Sufficient", "Not applicable")}`,
+      `Knowledge worthiness: ${fieldBlock("knowledgeWorthiness", "Knowledge Worthiness", "UNDETERMINED", 300)}`,
+      `Knowledge worthiness reason: ${fieldBlock("knowledgeWorthinessReason", "Knowledge Worthiness Reason", "Not established")}`,
+      `Existing knowledge coverage: ${fieldBlock("existingKnowledgeCoverage", "Existing Knowledge Coverage", "UNDETERMINED", 500)}`,
+      `Best prior reference: ${fieldBlock("priorReference", "Best Prior Reference", "None identified")}`,
+      `Knowledge availability/channel: ${fieldBlock("knowledgeAvailability", "Knowledge Availability / Channel", "UNDETERMINED")}`,
+      `Knowledge channel gap: ${fieldBlock("knowledgeChannelGap", "Knowledge Channel Gap", "None identified")}`,
+      `Primary knowledge reason: ${fieldBlock("primaryKnowledgeReason", "Primary Knowledge Reason", "Not established")}`,
+      `Knowledge decision explanation: ${fieldBlock("knowledgeDecisionExplanation", "Knowledge Decision Explanation", "Not established")}`,
+      `Secondary knowledge reason: ${fieldBlock("secondaryKnowledgeReason", "Secondary Knowledge Reason", "NONE")}`,
+      `Admin/Tech Guide needed: ${fieldBlock("adminTechGuideNeeded", "Admin/Tech Guide Needed", "NO", 200)}`,
+      `Admin/Tech Guide need reason: ${fieldBlock("adminTechGuideNeedReason", "Admin/Tech Guide Need Reason", "NONE")}`,
+      `Admin/Tech Guide gap evidence: ${fieldBlock("adminTechGuideGapEvidence", "Admin/Tech Guide Gap Evidence", "NOT ESTABLISHED")}`,
+      `Target audience: ${fieldBlock("knowledgeTargetAudience", "Target Audience", "TAC / intended reader")}`,
+      `Knowledge gap: ${fieldBlock("knowledgeGap", "Knowledge Gap", "Not established")}`,
+      `Target knowledge location: ${fieldBlock("targetKnowledgeLocation", "Target Knowledge Location", "Not established")}`,
+      `Knowledge action target type: ${fieldBlock("knowledgeActionTargetType", "Knowledge Action Target Type", "Undetermined", 400)}`,
+      `Knowledge action target: ${fieldBlock("knowledgeActionTarget", "Knowledge Action Target", "Not established")}`,
+      `Current target coverage: ${fieldBlock("currentTargetCoverage", "Current Target Coverage", "Not applicable")}`,
+      `Target gap / required change: ${fieldBlock("targetGapRequiredChange", "Target Gap / Required Change", "Not applicable")}`,
+      `Why this destination: ${fieldBlock("whyThisDestination", "Why This Destination", "Not established")}`,
+      `Why create vs update / no action: ${fieldBlock("whyCreateVsUpdateNoAction", "Why Create vs Update / No Action", "Not applicable")}`,
+      `Why update vs create: ${fieldBlock("whyUpdateVsCreate", "Why Update vs Create", "Not applicable")}`,
+      `Sections to update: ${fieldBlock("sectionsToUpdate", "Sections to Update", "Not applicable")}`,
+      `Validation boundary: ${fieldBlock("validationBoundary", "Validation Boundary", "No additional Audit validation boundary supplied")}`
+    ];
+    return lines.join("\n");
+  }
+
   function buildKnowledgePrompt(job) {
     const type = knowledgeArtifactType(job);
     const label = knowledgeArtifactLabel(type);
@@ -3280,11 +3736,13 @@ PURPOSE
 Create a high-quality reusable DRAFT for later human review.
 Do not merely restate the retrospective.
 
-STARTING CASE BASIS
-${job.auditAnswer}
+NATIVE INVESTIGATION CONTEXT
+This Case Chat is already attached to the applicable TACopilot investigation. Use the current TACO analysis and complete Jira/Engineering, Salesforce history, Salesforce Knowledge, maintained documentation, approved internal knowledge/runbooks, validated prior cases and other source material actually available to this investigation. Do not ask for those records to be pasted into this prompt.
+
+${knowledgeAuditDecisionPacket(job)}
 ${sharedKnowledgeEvidencePromptContext(job)}
 KNOWLEDGE ENRICHMENT
-Before drafting, inspect the knowledge/reference material actually available to this Case Chat/TACO investigation and use it to improve the artifact when useful.
+Before drafting, inspect the underlying knowledge/reference material actually available to this native Case Chat investigation and use it to improve the artifact when useful.
 
 Useful source types can include:
 - authoritative/approved product documentation
@@ -3314,14 +3772,20 @@ IMPORTANT SOURCE RULES
 - If a source is historical, old, version-specific, or its current maintenance status is unknown, do not discard it automatically. State the freshness/applicability concern clearly and create a material REVIEW item when that source supports an important reusable claim.
 - Check whether older KCS, Confluence/runbook, Jira/XSUP and Salesforce-case information has been superseded or invalidated by current product documentation or newer Engineering guidance.
 - Do not treat the same statement repeated across cases, KCS, Confluence, generated artifacts or AI summaries as independent confirmation until the underlying sources are traced.
-- Generated XSUP Auditor/TACopilot/Case Chat drafts may be used only as discovery/index material. Never cite a generated derivative as the sole authority; follow it back to the original Jira/SFDC/documentation/KCS/Engineering source.
+- Generated XSUP Auditor/TACopilot/Case Chat drafts may be used only as discovery/index material. Never cite a generated derivative as the sole authority; follow it back to the original Jira/SFDC/documentation/KCS/Engineering source. A derivative source is a BLOCKER only when it is the only material authority for that public reusable claim. When the same exact claim is independently supported by an original/maintained source, cite the original authority and do not create a derivative-evidence blocker merely because a derivative source is also present.
+- Distinguish executable/request/configuration input from read-only output/response examples. A JSON/API response example may still need API-contract/schema validation, but do not describe a read-only response body as a runnable/configuration block.
+- Fence parsing must treat CMD/BAT/PowerShell/shell blocks as commands, and text/plaintext/output blocks as read-only unless their own content is clearly executable. Never let an unsupported/unknown fence language cause adjacent prose/headings to be swallowed into a false runnable/API review.
+- Keep backend implementation identifiers and privileged/internal mechanics (feature-flag names, pod/container/namespace names, production database/resource identifiers, internal service names, microservice/process/listener implementation names, elevated roles, internal Jira routing/component names, raw backend metadata fields) in Internal Notes — TAC Only unless maintained public/approved documentation explicitly establishes that exact detail as customer-facing supported guidance. The public body should explain the supported observable behavior and supported action without exposing unnecessary implementation internals.
+- This separation is mandatory: if exact internal mechanics appear in the proposed public body without maintained public authority, rewrite/generalize the public statement during the bounded repair and preserve the exact sourced detail in Internal Notes — TAC Only. Do not leave the exact internal identifier in public Search Keywords merely because it can help TAC search internally.
 - If sources materially conflict, preserve the conflict as an inline REVIEW/BLOCKER at the affected claim/reference rather than silently selecting one answer. Resolve against current maintained documentation or current SME/Engineering confirmation. If unresolved, generalize/remove the disputed claim.
 
 GENERALIZATION + SAFETY
 - Generalize the reusable technical pattern across customers.
 - Do not expose customer-specific names, tenant IDs, hostnames or confidential one-off data unless absolutely necessary as a labeled example.
-- Never invent product versions, supported platforms, event IDs, commands, registry/config paths, exclusion paths, UI navigation, API routes/payloads, process paths, workarounds, expected values, service names, return codes, exact timings, architecture behavior or remediation.
-- If a useful material detail cannot be established, omit it or mark it "TAC/SME validation required".
+- ACCURACY BEFORE GENERALIZATION: when an exact technical value can be established from reliable available sources, prefer the accurate exact value over vague wording. Actively inspect current maintained product/vendor documentation first, then directly applicable Engineering/product evidence, before emitting exact commands, code, XQL, dataset/field names, API routes/payloads, UI paths, configuration keys, versions, timings, architecture behavior or remediation.
+- If the exact detail is established by current authoritative material, include it accurately with claim-level [R#] support and preserve its documented product/version/scope.
+- If an exact detail is supported only by historical/case-specific evidence, keep useful detail when appropriate but require current-applicability review rather than silently treating it as a current universal guarantee.
+- If a useful exact detail cannot be established after checking available sources, do NOT manufacture plausible precision. Describe the supported objective/procedure at the level actually established and add a precise TAC/SME validation item stating what exact value/syntax must be confirmed, where to verify it, why it matters and the required outcome before publication.
 - Do not turn an inference or plausible troubleshooting idea into a confirmed fact/fix.
 - Do not include internal reuse metadata such as ${REUSE_META_PREFIX}.
 - Do not include unresolved placeholders.
@@ -3360,6 +3824,7 @@ REVIEWER CHOICE — CREATE A SEPARATE NEW KCS
 DIRECT GENERATE KCS — EXISTING-KCS DECISION
 - This user-invoked flow intentionally bypasses retrospective Audit routing. Inspect actual existing Salesforce KCS content and choose CREATE vs UPDATE from content overlap.
 - If actual existing Salesforce KCS content substantially overlaps this issue and can be extended, return the Existing KCS Update Proposal structure below.
+- For a PARTIAL content match, treat UPDATE as the default when title/search terms or additional symptom/cause/check/resolution sections can safely absorb the gap. Create a separate KCS only when the reusable task/symptom/workflow/audience is materially distinct and merging would confuse or over-broaden the existing article. Discoverability alone is not enough.
 - Do not choose UPDATE from title/keyword similarity alone; compare symptom/task, cause/meaning, checks/procedure, resolution/workaround/action and verification.
 `
           : `
@@ -3703,10 +4168,11 @@ Product: ${productLabel(job)}
 Artifact Type: ${label}
 Initial Retrospective Readiness: ${job.artifactReadiness || "DRAFTABLE"}
 
-RETROSPECTIVE — AUTHORITATIVE CASE BASIS
-${job.auditAnswer}
+NATIVE INVESTIGATION + AUDIT ROUTE BASIS
+This Case Chat is already attached to the applicable TACopilot investigation. Use the underlying native sources available to the investigation; do not treat the Audit packet or generated draft as authoritative evidence.
+${knowledgeAuditDecisionPacket(job)}
 
-ENRICHED DRAFT TO REVIEW
+EXACT ENRICHED DRAFT TO REVIEW
 ${draftAnswer}
 ${sharedKnowledgeEvidencePromptContext(job)}
 TASK
@@ -3726,12 +4192,15 @@ MANDATORY REVIEW ACTIONS
 - Do NOT place raw editorial warnings such as \`_Timing note: ..._\`, \`Reviewer note\`, or similar authoring prose inside the reusable article body. Exact observed timing may remain only as clearly observational wording and must be paired with a structured SPECIAL_REVIEW_ITEMS Kind=TIMING_SLA item unless current maintained authority directly establishes that same timing/scope.
 - SPECIAL_REVIEW_ITEMS must use a semantic Kind and the exact complete reader-visible Target claim. Kind, Target, What, Why and Outcome must all refer to the same issue.
 - Detect source conflicts. For every material conflict, add Conflict=<concise description of the disagreement> to the REVIEW/BLOCKER line, identify the R# sources, and require the reviewer to resolve it against current maintained documentation or current SME/Engineering confirmation.
-- Do not count repeated derivative statements as independent corroboration. Trace generated/AI/Case Chat summaries back to original sources. A generated artifact cannot be the sole authority for a reusable product claim.
+- Do not count repeated derivative statements as independent corroboration. Trace generated/AI/Case Chat summaries back to original sources. A generated artifact cannot be the sole authority for a reusable product claim. Emit DERIVATIVE_AI_EVIDENCE as a BLOCKER only when the highlighted public claim lacks independent original/maintained authority. If the same claim is independently supported by original Jira/SFDC evidence, current KCS/docs, approved maintained internal guidance, or explicit current SME/Engineering evidence, retain/cite that authority and do not create a false derivative blocker just because a derivative source is co-cited. Derivative material used only inside clearly labeled Internal Notes is not by itself a publication blocker.
+- Distinguish executable/request/configuration blocks from read-only response/output examples. Read-only JSON/API response examples should be reviewed as API response/schema contracts when necessary, not mislabeled as runnable/configuration content.
+- Move exact backend implementation identifiers and privileged/internal mechanics (feature flags, pod/container/namespace names, production database/resource identifiers, internal service names, internal proxy/listener names, microservice/process/subprocess names, backend partition/job/worker/thread mechanics, elevated roles, internal Jira routing/components, raw backend metadata fields) to Internal Notes — TAC Only unless maintained public/approved documentation explicitly supports that exact detail for public reuse. Keep the public body at the supported observable behavior/action level. This is a required repair, not only a review suggestion: when such internal detail is present in the public body without maintained public authority, rewrite the public sentence to the supported observable behavior/action and preserve the exact sourced implementation detail in Internal Notes.
 - Remove internal metadata/placeholders.
 - Do not flag a heading, list introduction, or structural label as uncited when the immediately following substantive child bullets/paragraphs carry the needed authoritative [R#] citations.
 - A special REVIEW/BLOCKER item must be actionable: exact Target when possible, What to review/resolve, Why it matters, Owner when useful, and authoritative R# references when available.
 - Never create a special item from generic phrases such as "None identified", "No validation items", "Final SME review", or "Ready for publication review".
 - Ensure fenced code blocks render correctly.
+- Perform an explicit block-by-block review of every runnable/copy-paste XQL/SQL/code/script/CLI/API request/JSON/YAML/regex example. Verify exact identifiers/syntax, product/version applicability, source support, placeholders and material side effects. Correct it from authoritative available sources when possible; do not manufacture missing syntax. If exact runnable content cannot be established, generalize it and create an actionable REVIEW, or BLOCKER when retaining unsupported runnable content would make the artifact unsafe/nonfunctional. For read-only API/JSON response or output examples, verify the response/schema contract when material, but classify them as API_CONTRACT/output-schema validation rather than runnable/configuration content.
 - Ensure any command/API/UI/version/timing/config/remediation detail is source-backed or explicitly marked for TAC/SME validation.
 - A logoff/logon or interactive-session action may be described as reprioritizing synchronization only when supported by the evidence; it must never be labeled an immediate workaround or presented as guaranteeing a specific/sub-hour completion time unless current authoritative documentation explicitly guarantees that timing.
 - For KCS/Admin Guide/KCS Update artifacts, every material product-behavior, timing, command/API, diagnostic, workaround and remediation claim must have an adjacent [R#] citation to the exact supporting source. A Source References list without claim-level body citations is not sufficient.
@@ -3983,8 +4452,10 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     const stop = new Set(["about","after","again","against","also","and","are","because","been","before","being","between","both","but","can","could","does","from","have","into","its","more","must","not","only","other","should","such","than","that","the","their","then","there","these","they","this","through","using","when","where","which","while","will","with","within","without","your"]);
     const normalized = String(value || "").toLowerCase()
       .replace(/\bsign[\s-]*out\b|\blog[\s-]*out\b/g, " logoff ")
-      .replace(/\bsign[\s-]*in\b|\blog[\s-]*in\b/g, " logon ");
-    return new Set(normalized.replace(/[^a-z0-9_./-]+/g," ").split(/\s+/).filter(t => t && (t.length >= 4 || /^(cie|dss|xql|api|ou|cli|ssl|tls|dns|sso|iam|jwt|idp|url|uri|tcp|udp|sql|xml|json|yaml|yml|http|https)$/.test(t)) && !stop.has(t)));
+      .replace(/\bsign[\s-]*in\b|\blog[\s-]*in\b/g, " logon ")
+      .replace(/\bbase[\s-]*16\b/g, " hexadecimal ")
+      .replace(/\bvid\s*\/\s*pid\b/g, " vid pid ");
+    return new Set(normalized.replace(/[^a-z0-9_./-]+/g," ").split(/\s+/).filter(t => t && (t.length >= 4 || /^(cie|dss|xql|api|ou|cli|ssl|tls|dns|sso|iam|jwt|idp|url|uri|tcp|udp|sql|xml|json|yaml|yml|http|https|vid|pid)$/.test(t)) && !stop.has(t)));
   }
 
   function sourceMatchScore(claim, ref, claims = []) {
@@ -4008,7 +4479,8 @@ ${KNOWLEDGE_FINAL_DELIMITER}
 
     // Exact quantitative/version promises may only inherit a citation when the
     // candidate source index contains the same number/version token.
-    const numeric = [...new Set((lower.match(/\b\d+(?:\.\d+)?\b/g) || []))];
+    const numeric = [...new Set((lower.match(/\b\d+(?:\.\d+)?\b/g) || []))]
+      .filter(n => !(n === "16" && /\bbase[\s-]*16\b/i.test(claim) && /\bhexadecimal\b/i.test(sourceText)));
     if (numeric.length && !numeric.every(n => new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}\\b`).test(src))) return 0;
     if (/\b(?:7\.x|8\.x|9\.x)\b/i.test(claim) && !/\b(?:7\.x|8\.x|9\.x)\b/i.test(sourceText)) return 0;
 
@@ -4289,8 +4761,8 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     // backend jobs/stages, internal diagnostics and Engineering-only boundaries.
     const blocks = String(text).split(/\n{2,}|(?=^#{2,5}\s)/m)
       .map(x=>cleanText(x.replace(/^#{1,6}\s+[^\n]+$/gm, " " ).replace(/^[-*+]\s*/gm, " "))).filter(Boolean);
-    const engSignal = /(?:Engineering|backend|internal implementation|architecture|architectural|config\.|customfield_|agent_chunk|chunk size|worker allocation|workers?\b|calculation jobs?|batch jobs?|queue|processing stage|scheduler|database inspection|backend database|internal API|service pipeline|throughput|shard|thread|job count|internal diagnostic)/i;
-    const decisionSignal = /(?:cannot|does not|doesn't|will not|won't|limit|constraint|scheduled|batch|push|event-driven|throughput|affect|change|controls?|determines?|observed|confirmed|investigat|tuning|allocation|size|count|cadence|queue|stage|parameter|config)/i;
+    const engSignal = /(?:Engineering|backend|internal implementation|internal peripheral|architecture|architectural|config\.|customfield_|agent_chunk|chunk size|worker allocation|workers?\b|calculation jobs?|batch jobs?|queue|processing stage|scheduler|database inspection|backend database|internal API|service pipeline|microservice|internal listener|listener port|daemon|feature flag|namespace|container|pod\b|backend metadata|production resource|throughput|shard|thread|job count|internal diagnostic|\b[A-Z][A-Za-z0-9]+(?:Policy|Violation|Flag|Toggle|Worker|Listener)\b|\b[a-z][a-z0-9_]+(?:_flag|_toggle|_enabled|_metadata)\b)/i;
+    const decisionSignal = /(?:cannot|does not|doesn't|will not|won't|limit|constraint|scheduled|batch|push|event-driven|throughput|affect|change|controls?|determines?|observed|confirmed|investigat|tuning|allocation|size|count|cadence|queue|stage|parameter|config|evaluat|violation|policy)/i;
     const unsupportedOnly = /(?:AI-assisted synthesis|authoritative source not established|legacy draft detail)/i;
 
     for (const block of blocks) {
@@ -4481,6 +4953,51 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     return text.replace(/\n{3,}/g,"\n\n").trim();
   }
 
+  function normalizePublicInternalMechanicsWithEvidence(artifact, type, sourceMap = new Map()) {
+    if (!( ["KCS_DRAFT","KCS_UPDATE","DOC_UPDATE","KNOWN_ISSUE"].includes(type))) return artifact;
+    let text = String(artifact || "");
+    const publicAuthorityForRefs = refs => (refs || []).some(key => {
+      const ref = sourceMap.get(String(key || "").toUpperCase());
+      if (!ref) return false;
+      const provenance = knowledgeSourceProvenance(ref);
+      return /Official product documentation|Official Palo Alto Networks web source|Salesforce Knowledge/i.test(provenance) && knowledgeSourceReviewState(ref) === "CURRENT";
+    });
+    const internalExact = /\b(?:backend (?:broker|queue|partition|job|worker|thread|database|metadata|service)|worker threads?|child worker processes?|subprocess(?:es)?|microservice|internal (?:service|proxy|listener|API|database|metadata|policy)|proxy listener|listener port|feature flags?|pod logs?|container logs?|namespace|production (?:database|db|firestore)|elevated role|backend telemetry)\b|`(?:expose_[a-z0-9_]+|[a-z][a-z0-9_]+(?:_flag|_toggle|_enabled|_metadata)|[A-Z][A-Za-z0-9]+(?:Policy|Violation|Flag|Toggle|Worker|Listener))`/i;
+    const genericize = sentence => {
+      let out = String(sentence || "");
+      out = out.replace(/\bThere is no backend [^.]{0,180}? operating across distinct tenant environments\b/gi, "The platform does not perform cross-tenant coordination or deduplication across distinct tenant environments");
+      out = out.replace(/\s*\((?:e\.g\.,?\s*|such as\s*)?`(?:expose_[a-z0-9_]+|[a-z][a-z0-9_]+(?:_flag|_toggle|_enabled|_metadata)|[A-Z][A-Za-z0-9]+(?:Policy|Violation|Flag|Toggle|Worker|Listener))`\)/gi, "");
+      out = out.replace(/`(?:expose_[a-z0-9_]+|[a-z][a-z0-9_]+(?:_flag|_toggle|_enabled|_metadata)|[A-Z][A-Za-z0-9]+(?:Policy|Violation|Flag|Toggle|Worker|Listener))`/g, "internal implementation detail");
+      out = out.replace(/\b(?:backend|internal)\s+(?:broker|queue|deduplication engine|partition|job|worker|thread|service|microservice|proxy listener|listener|database|metadata)\b/gi, "internal processing");
+      out = out.replace(/\bworker threads?\b|\bsubprocess(?:es)?\b|\bchild worker processes?\b/gi, "internal processing");
+      out = out.replace(/\bgoverned by (?:backend )?feature flags?\b/gi, "governed by supported tenant entitlement and platform configuration");
+      out = out.replace(/\b(?:update|modify|change)\s+(?:the\s+)?backend (?:database )?metadata\s*(?:\([^)]*\))?/gi, "complete the required internal entitlement/configuration update");
+      out = out.replace(/\bbackend tenant metadata\s*(?:\([^)]*\))?/gi, "internal tenant configuration");
+      out = out.replace(/\bThere is no internal processing(?:, internal processing)*(?:,? or internal processing)? operating across distinct tenant environments\b/gi, "The platform does not perform cross-tenant deduplication across distinct tenant environments");
+      out = out.replace(/\bstrict logical and physical isolation across child tenants\b/gi, "independent evaluation within each tenant");
+      out = out.replace(/\s{2,}/g, " ");
+      return out;
+    };
+    const sections = String(text).split(/(?=^##\s+)/gm);
+    text = sections.map(section => {
+      const heading = cleanText(section.match(/^##\s+([^\n]+)/)?.[1] || "");
+      if (/^(?:Internal Notes|Source References|Review Details|TAC\/SME Validation Items|Validation Items)/i.test(heading)) return section;
+      return section.split(/\r?\n/).map(line => {
+        if (!internalExact.test(line)) return line;
+        const refs = refsNearTarget(text, cleanText(line).slice(0,260));
+        if (refs.length && publicAuthorityForRefs(refs)) return line;
+        return genericize(line);
+      }).join("\n");
+    }).join("");
+    // Search-keyword lines should not expose internal-only identifiers even when the
+    // surrounding public prose was successfully generalized.
+    text = text.replace(/(?:^|\n)(##\s+Search Keywords[^\n]*\n[\s\S]*?)(?=\n##\s+|$)/gi, (_m, block) => `\n${block}`
+      .replace(/\b(?:expose_[a-z0-9_]+|[A-Z][A-Za-z0-9]+(?:Policy|Violation|Flag|Toggle|Worker|Listener))\b,?\s*/g, "")
+      .replace(/,\s*,/g, ", ")
+      .replace(/\s+,/g, ","));
+    return text.replace(/\n{3,}/g,"\n\n").trim();
+  }
+
   function normalizeDocumentationInternalResidue(artifact, type) {
     if (type !== "DOC_UPDATE") return artifact;
     let text = String(artifact || "");
@@ -4557,6 +5074,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     text = ensureKcsIntroduction(text, type);
     if (merged.map.size) {
       text = injectConservativeKnowledgeCitations(text, merged.map, merged.claimIndex);
+      text = normalizePublicInternalMechanicsWithEvidence(text, type, merged.map);
       const finalClaims = knowledgeReferenceClaimMap(text);
       const usedNow = knowledgeUsedReferenceIds(text);
       for (const [key, ref] of merged.map) {
@@ -4612,6 +5130,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         .trim();
       identity = cleanText(identity)
         .replace(/(?:\s+[—–-]\s*)?(?:Open source(?: \d+)?|Open Jira(?:\s+XSUP-\d+)?|Open SFDC(?:\s+\d+)?)\s*$/i, "")
+        .replace(/[([{]\s*$/, "")
         .replace(/^\[|\]$/g, "").trim() || key;
       if (!map.has(key)) map.set(key, {key, identity, urls, provenance, freshness, supports, evidence});
       else {
@@ -4709,20 +5228,26 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       const links=(ref.urls||[]).map((u,i)=>{const clean=safeUrl(u.url);return clean?`<a class="xa-source-open" href="${escapeHtml(clean)}" target="_blank" rel="noopener noreferrer">${escapeHtml(u.label || (i?`Open source ${i+1}`:"Open source"))}</a>`:"";}).filter(Boolean).join(" ");
       const currentClaims = claimMap.get(key) || [];
       let supports = "";
-      if (usedRefs.has(key) && currentClaims.length) supports = `<div class="xa-source-support"><b>Supports in this article:</b> ${currentClaims.map(x=>escapeHtml(x)).join(" · ")}</div>`;
+      if (usedRefs.has(key) && currentClaims.length) supports = `<div class="xa-source-support"><b>Claims citing this source:</b> ${currentClaims.map(x=>escapeHtml(x)).join(" · ")}</div>`;
       else if (!usedRefs.has(key) && cleanText(ref.supports || "")) supports = `<div class="xa-source-support"><b>Related evidence context:</b> ${escapeHtml(cleanText(ref.supports))}</div>`;
-      else if (usedRefs.has(key)) supports = `<div class="xa-source-support"><b>Supports in this article:</b> This source is cited in the article; review the cited passage for the exact supported detail.</div>`;
+      else if (usedRefs.has(key)) supports = `<div class="xa-source-support"><b>Claims citing this source:</b> This source is cited in the article; review the cited passage and any co-cited sources for the exact supported detail.</div>`;
       const sourceType = knowledgeSourceProvenance(ref);
       const provenance = `<div class="xa-source-provenance"><b>Source type:</b> ${escapeHtml(sourceType)}</div>`;
       const freshnessText = knowledgeSourceFreshness(ref, job);
-      const state = knowledgeSourceReviewState(ref, job);
+      const rawState = knowledgeSourceReviewState(ref, job);
+      const derivativeSupplemental = rawState === "BLOCKER" && knowledgeSourceIsDerivative(ref) && (
+        !currentClaims.length || currentClaims.every(claim => independentAuthorityRefsForClaim(claim, [key], claimMap, refMap).length)
+      );
+      const state = derivativeSupplemental ? "DERIVATIVE_SUPPLEMENTAL" : rawState;
       const stateChip = state === "BLOCKER"
         ? '<span class="xa-source-state blocker">✕ BLOCKER SOURCE</span>'
-        : state === "CASE_EVIDENCE"
-          ? '<span class="xa-source-state review">⚠ CASE EVIDENCE · REVIEW CURRENTNESS FOR REUSE</span>'
-          : state === "REVIEW_CURRENTNESS"
-            ? '<span class="xa-source-state review">⚠ REVIEW CURRENTNESS</span>'
-            : '<span class="xa-source-state current">✓ CURRENT / MAINTAINED SOURCE</span>';
+        : state === "DERIVATIVE_SUPPLEMENTAL"
+          ? '<span class="xa-source-state review">△ DERIVATIVE / DISCOVERY ONLY</span>'
+          : state === "CASE_EVIDENCE"
+            ? '<span class="xa-source-state review">⚠ CASE EVIDENCE · REVIEW CURRENTNESS FOR REUSE</span>'
+            : state === "REVIEW_CURRENTNESS"
+              ? '<span class="xa-source-state review">⚠ REVIEW CURRENTNESS</span>'
+              : '<span class="xa-source-state current">✓ CURRENT / MAINTAINED SOURCE</span>';
       const freshness = `<div class="xa-source-freshness ${state === "CURRENT" ? "current" : state === "BLOCKER" ? "blocker" : "review"}"><b>Freshness / applicability:</b> ${escapeHtml(freshnessText)}</div>`;
       const evidence = cleanText(ref.evidence || "") ? `<div class="xa-source-evidence"><b>Evidence from source:</b> ${escapeHtml(ref.evidence)}</div>` : "";
       const linkBlock = links ? `<div class="xa-source-links">${links}</div>` : `<div class="xa-source-links"><span class="xa-ref-missing">Direct link not available in current evidence</span></div>`;
@@ -5329,8 +5854,64 @@ ${KNOWLEDGE_FINAL_DELIMITER}
 
     if (actions.includes("CREATE KCS")) {
       const kcsMatch = normalizeDecision(extractField(a, "Existing KCS Content Match"));
+      const inspectedKcsText = cleanText([
+        extractFieldBlock(a, "Existing Salesforce KCS Candidates"),
+        extractFieldBlock(a, "Existing KCS Candidate"),
+        extractFieldBlock(a, "Best Existing Knowledge Reference"),
+        extractFieldBlock(a, "Best Prior Reference")
+      ].filter(Boolean).join(" "));
+      const inspectedKcsCoverage = cleanText(
+        extractFieldBlock(a, "Existing KCS Covered Content") ||
+        extractFieldBlock(a, "Existing Coverage") ||
+        extractFieldBlock(a, "Current Target Coverage") ||
+        extractFieldBlock(a, "What Was Already Known")
+      );
+      const hasSpecificSalesforceKcs = isSalesforceKnowledgeUrl(inspectedKcsText) || /\bka[A-Za-z0-9]{8,}\b/i.test(inspectedKcsText);
+      const hasMeaningfulKcsCoverage = hasSpecificSalesforceKcs && inspectedKcsCoverage && !/^(?:not applicable|none(?: established| identified)?|unknown|undetermined|n\/a)$/i.test(inspectedKcsCoverage) && inspectedKcsCoverage.length >= 24;
       if (kcsMatch === "DIRECT") {
         return {valid:false, reason:"CREATE KCS conflicts with Existing KCS Content Match = DIRECT; inspect the matching Salesforce KCS and route to UPDATE EXISTING KCS or correct the content-match finding"};
+      }
+      if (hasMeaningfulKcsCoverage && !["PARTIAL", "NONE"].includes(kcsMatch)) {
+        return {valid:false, reason:"CREATE KCS identified a specific Salesforce KCS with meaningful existing coverage but did not reconcile Existing KCS Content Match. Classify the inspected overlap and complete the mergeability gate before creating a separate article"};
+      }
+      if (kcsMatch === "PARTIAL" || hasMeaningfulKcsCoverage) {
+        const mergeability = normalizeDecision(extractField(a, "Existing KCS Mergeability"));
+        const whyNotMerge = cleanText(extractFieldBlock(a, "Why Not Merge Into Existing KCS"));
+        const genericDistinct = /(?:different title|different keywords?|discoverability|more searchable|search terms?|separate article is better|dedicated article is better|specific scenario)/i.test(whyNotMerge) && whyNotMerge.length < 140;
+        if (mergeability !== "DISTINCT") {
+          return {valid:false, reason:"CREATE KCS with an overlapping/covered Salesforce KCS requires Existing KCS Mergeability = DISTINCT; otherwise prefer UPDATE EXISTING KCS or mark the route UNDETERMINED"};
+        }
+        if (!whyNotMerge || /^(?:not applicable|none|undetermined|unknown)$/i.test(whyNotMerge) || whyNotMerge.length < 45 || genericDistinct) {
+          return {valid:false, reason:"CREATE KCS with an identified Salesforce KCS that already covers material content requires a concrete Why Not Merge Into Existing KCS explanation based on materially distinct task/symptom/workflow/audience, not discoverability or title differences alone"};
+        }
+      }
+
+      const worthiness = normalizeDecision(extractField(a, "Knowledge Worthiness"));
+      const target = cleanText(extractFieldBlock(a, "Knowledge Action Target"));
+      const gap = cleanText(
+        extractFieldBlock(a, "Target Gap / Required Change") ||
+        extractFieldBlock(a, "Remaining Reusable Gap") ||
+        extractFieldBlock(a, "Knowledge Gap")
+      );
+      const whyCreate = cleanText(extractFieldBlock(a, "Why Create vs Update / No Action"));
+      const candidates = cleanText(extractFieldBlock(a, "Existing Salesforce KCS Candidates"));
+      const genericTarget = /^(?:new\s+)?salesforce\s+kcs|^kcs\s+draft$|^create\s+kcs$/i.test(target);
+      const genericWhy = /(?:create a standalone salesforce kcs for immediate tac reuse|searchable (?:salesforce )?kcs (?:article )?is the best vehicle|standalone kcs (?:is|provides) (?:the )?best)/i.test(whyCreate);
+
+      if (worthiness !== "YES") {
+        return {valid:false, reason:"CREATE KCS requires Knowledge Worthiness = YES and a durable reusable gap"};
+      }
+      if (!target || genericTarget || target.length < 12) {
+        return {valid:false, reason:"CREATE KCS requires a specific searchable symptom/error/task/behavior target, not a generic KCS label"};
+      }
+      if (!gap || /^(?:none|none identified|not applicable|undetermined|unknown)$/i.test(gap) || gap.length < 20) {
+        return {valid:false, reason:"CREATE KCS requires the exact durable reusable gap the new article will fill"};
+      }
+      if (!whyCreate || /^(?:not applicable|undetermined|unknown)$/i.test(whyCreate) || whyCreate.length < 30 || genericWhy) {
+        return {valid:false, reason:"CREATE KCS requires a case-specific explanation of why CREATE is preferable to UPDATE EXISTING KCS or NO KNOWLEDGE ACTION"};
+      }
+      if (!candidates) {
+        return {valid:false, reason:"CREATE KCS requires Existing Salesforce KCS Candidates to state the inspected candidate(s) or 'None identified'"};
       }
     }
 
@@ -5339,18 +5920,32 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       const match = normalizeDecision(extractField(a, "Existing KCS Content Match"));
       const covered = cleanText(extractFieldBlock(a, "Existing KCS Covered Content"));
       const missing = cleanText(extractFieldBlock(a, "Existing KCS Missing Content"));
-      const hasIdentity = /\bka[A-Za-z0-9]{8,}\b/i.test(candidate) || /https?:\/\/[^\s]*(?:Knowledge__kav|KCSArticleDetail|knowledgebase)/i.test(candidate);
+      const hasIdentity = /\bka[A-Za-z0-9]{8,}\b/i.test(candidate) || Boolean(findSalesforceKnowledgeUrl(candidate));
       if (!candidate || /^(?:none|none identified|not applicable|undetermined)$/i.test(candidate) || !hasIdentity) {
         return {valid:false, reason:"UPDATE EXISTING KCS requires an inspected specific Salesforce KCS candidate with article ID/link"};
       }
       if (!["DIRECT", "PARTIAL"].includes(match)) {
         return {valid:false, reason:"UPDATE EXISTING KCS requires Existing KCS Content Match = DIRECT or PARTIAL"};
       }
+      if (match === "PARTIAL") {
+        const mergeability = normalizeDecision(extractField(a, "Existing KCS Mergeability"));
+        if (mergeability !== "MERGEABLE") {
+          return {valid:false, reason:"UPDATE EXISTING KCS with Existing KCS Content Match = PARTIAL requires Existing KCS Mergeability = MERGEABLE"};
+        }
+      }
       if (!covered || /^(?:not applicable|none|undetermined)$/i.test(covered)) {
         return {valid:false, reason:"UPDATE EXISTING KCS requires the content already covered by the inspected article"};
       }
       if (!missing || /^(?:not applicable|none|undetermined)$/i.test(missing)) {
         return {valid:false, reason:"UPDATE EXISTING KCS requires the material missing content to be identified"};
+      }
+      const sections = cleanText(extractFieldBlock(a, "Sections to Update"));
+      const whyUpdate = cleanText(extractFieldBlock(a, "Why Update vs Create"));
+      if (!sections || /^(?:not applicable|none|undetermined|unknown)$/i.test(sections)) {
+        return {valid:false, reason:"UPDATE EXISTING KCS requires the specific sections/areas to add, replace or clarify"};
+      }
+      if (!whyUpdate || /^(?:not applicable|none|undetermined|unknown)$/i.test(whyUpdate) || whyUpdate.length < 20) {
+        return {valid:false, reason:"UPDATE EXISTING KCS requires an explicit explanation of why updating the inspected article is preferable to creating a duplicate"};
       }
     }
 
@@ -5441,10 +6036,10 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       }
       if (!candidateKnowledgeInputsMatch(item, job)) continue;
 
-      // A quality-finalized artifact is preferred. For cost-safe cross-version
-      // reuse, an older complete artifact/draft of the exact requested type is
-      // also acceptable when no source evidence changed; quality is not re-run
-      // unless the reviewer explicitly regenerates it.
+      // A quality-finalized artifact is reusable as the final artifact. A legacy
+      // source-current draft may be reused only as a DRAFT input; it must still
+      // go through the independent quality-review stage before it is treated as
+      // the final KCS/Guide/Runbook output.
       const quality = parseKnowledgeQualityResponse(item.answer, job);
       if (quality.valid) return {...item, source_current_skipped: skipped};
       const legacy = validateReusableKnowledgeAnswer(item.answer, job, "knowledge_draft");
@@ -5452,8 +6047,12 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         const artifact = stripInternalKnowledgeMetadata(item.answer || "");
         const refs = parseKnowledgeSourceReferences(artifact);
         const used = knowledgeUsedReferenceIds(artifact);
-        if (type === "knowledge" && (knowledgeArtifactType(job) === "KCS_DRAFT" || knowledgeArtifactType(job) === "DOC_UPDATE" || knowledgeArtifactType(job) === "KCS_UPDATE") && refs.size && !used.size) {
+        if ((knowledgeArtifactType(job) === "KCS_DRAFT" || knowledgeArtifactType(job) === "DOC_UPDATE" || knowledgeArtifactType(job) === "KCS_UPDATE") && refs.size && !used.size) {
           skipped.push({id:item.id, reason:"source list exists but claim-level R# citations are missing"});
+          continue;
+        }
+        if (type === "knowledge") {
+          skipped.push({id:item.id, reason:"source-current draft found; independent quality review is still required"});
           continue;
         }
         return {...item, source_current_skipped: skipped};
@@ -5557,6 +6156,8 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         .some(name => extractField(a, fieldLabels[name]) || (name === "Flag / Label" && extractField(a, "Label / Flag Verdict")));
       if (!hasExpectedVerdict) return {valid:false, reason:"in-scope answer is missing an applicable product-specific field verdict"};
     }
+    const fieldValueValidation = validateAuditRecommendedFieldValues(a);
+    if (!fieldValueValidation.valid) return fieldValueValidation;
     const knowledgeValidation = validateAuditKnowledgeDecisionFields(a);
     if (!knowledgeValidation.valid) return knowledgeValidation;
     return {valid:true};
@@ -5877,6 +6478,112 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     };
   }
 
+  async function inspectReusableCaseChatNoWait({
+    job,
+    type,
+    currentMeta,
+    legacyQuestion = ""
+  }) {
+    let history;
+    try {
+      history = await getFollowupHistory(job.caseNumber, job.investigationId, {quick:true});
+    } catch (err) {
+      return {
+        reused:false,
+        reason:`Case Chat history could not be read during read-only preflight (${err?.message || err}).`
+      };
+    }
+
+    const historyItems = collectFollowupHistoryItems(history);
+    const candidate = findReusableFollowupCandidate(history, {
+      type,
+      fingerprint: currentMeta?.fingerprint || "",
+      legacyQuestion
+    });
+
+    const validate = item => {
+      if (!item || String(item.status || "").toLowerCase() !== "completed" || !cleanText(item.answer || "")) return null;
+      const validation = type === "audit"
+        ? validateReusableAuditAnswer(item.answer, job)
+        : validateReusableKnowledgeAnswer(item.answer, job, type);
+      if (!validation.valid) return {valid:false, reason:validation.reason || "structural validation failed"};
+      return {valid:true};
+    };
+
+    if (candidate) {
+      const checked = validate(candidate);
+      if (checked?.valid) {
+        return {
+          reused:true,
+          answer:candidate.answer,
+          followupId:candidate.id,
+          completedAt:followupTimestamp(candidate) || Date.now(),
+          reason:candidate.reuse_match === "legacy-exact"
+            ? `Existing exact-prompt ${type} Case Chat #${candidate.id} is ready for reuse.`
+            : `Existing ${type} Case Chat #${candidate.id} exactly matches the current fingerprint.`
+        };
+      }
+    }
+
+    const compatible = findCurrentCompatibleCompletedFollowup(history, {job, type});
+    if (compatible) {
+      return {
+        reused:true,
+        answer:compatible.answer,
+        followupId:compatible.id,
+        completedAt:followupTimestamp(compatible) || Date.now(),
+        reason:`Existing source-current compatible ${type} Case Chat #${compatible.id} is ready for reuse; no newer original Jira/SFDC evidence requires regeneration.`
+      };
+    }
+
+    const previous = latestAuditorFollowup(history, type) || latestLikelyAuditorFollowup(history, type, job.xsup);
+    const reason = previous
+      ? `Existing ${type} Case Chat #${previous.id} was found but is not reusable for the current source/product/artifact boundary.`
+      : `No reusable ${type} result was found after checking ${historyItems.length} Case Chat history entries.`;
+    return {
+      reused:false,
+      reason,
+      previousFollowupId:previous?.id || null,
+      previousCompletedAt:previous ? followupTimestamp(previous) : null
+    };
+  }
+
+  async function findCompletedExactPromptInHistory(caseNumber, investigationId, question) {
+    if (!caseNumber || !investigationId || !cleanText(question)) return null;
+    try {
+      const history = await getFollowupHistory(caseNumber, investigationId, {quick:true});
+      const target = String(question || "").trim();
+      const exact = sortFollowupsNewest(collectFollowupHistoryItems(history)).find(item =>
+        String(item.status || "").toLowerCase() === "completed" &&
+        cleanText(item.answer || "") &&
+        String(item.question || "").trim() === target
+      );
+      if (!exact || isTransientCaseChatAnswer(exact.answer || "")) return null;
+      return {
+        answer:exact.answer,
+        followupId:exact.id,
+        completedAt:followupTimestamp(exact) || Date.now()
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function existingExactFollowupIds(caseNumber, investigationId, question) {
+    if (!caseNumber || !investigationId || !cleanText(question)) return new Set();
+    try {
+      const history = await getFollowupHistory(caseNumber, investigationId, {quick:true});
+      return new Set(
+        collectFollowupHistoryItems(history)
+          .filter(item => String(item.question || "").trim() === String(question || "").trim())
+          .map(item => Number(item.id))
+          .filter(Number.isFinite)
+      );
+    } catch (_) {
+      return new Set();
+    }
+  }
+
   async function postFollowup(caseNumber, investigationId, question) {
     const r = await request(`/taco/pilot/investigation/${caseNumber}/followup`, {
       method: "POST",
@@ -5899,7 +6606,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     return /Failed to fetch|NetworkError|Load failed|network request failed|connection.*reset|temporarily unavailable|timeout|CSRF|HTTP 403|HTTP 408|HTTP 425|HTTP 429|HTTP 5\d\d|task failed|task rejected|service error|service unavailable|temporary system error/i.test(message);
   }
 
-  async function submitFollowupResilient(caseNumber, investigationId, question, onProgress = null) {
+  async function submitFollowupResilient(caseNumber, investigationId, question, onProgress = null, { excludedFollowupIds = null } = {}) {
     try {
       return await postFollowup(caseNumber, investigationId, question);
     } catch (err) {
@@ -5909,7 +6616,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       try {
         await sleep(1000);
         const history = await getFollowupHistory(caseNumber, investigationId);
-        const recoveredId = findFollowupInHistory(history, question);
+        const recoveredId = findFollowupInHistory(history, question, excludedFollowupIds);
         if (recoveredId) {
           onProgress?.(`Recovered accepted Case Chat #${recoveredId} from history.`);
           return { followup_id: recoveredId, recovered_from_history: true };
@@ -5947,7 +6654,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     investigationId,
     question,
     onProgress = null,
-    { label = "Case Chat", retryOnce = false } = {}
+    { label = "Case Chat", retryOnce = false, forceFresh = false, excludedFollowupIds = null } = {}
   ) {
     let lastError = null;
 
@@ -5957,7 +6664,8 @@ ${KNOWLEDGE_FINAL_DELIMITER}
           caseNumber,
           investigationId,
           question,
-          onProgress
+          onProgress,
+          { excludedFollowupIds: forceFresh ? excludedFollowupIds : null }
         );
         const directId = extractFollowupId(submit);
         const taskId = submit?.task_id;
@@ -5970,7 +6678,8 @@ ${KNOWLEDGE_FINAL_DELIMITER}
           investigationId,
           taskId,
           question,
-          onProgress
+          onProgress,
+          forceFresh ? excludedFollowupIds : null
         );
         onProgress?.(`${label} #${followupId}`);
         const answer = await waitForFollowup(caseNumber, followupId, onProgress);
@@ -5992,7 +6701,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         // treated as successful recovery.
         try {
           const history = await getFollowupHistory(caseNumber, investigationId);
-          const recoveredId = findFollowupInHistory(history, question);
+          const recoveredId = findFollowupInHistory(history, question, forceFresh ? excludedFollowupIds : null);
           if (recoveredId) {
             onProgress?.(`${label} response interrupted · checking Case Chat #${recoveredId}...`);
             const recoveredAnswer = await waitForFollowup(caseNumber, recoveredId, onProgress);
@@ -6028,8 +6737,42 @@ ${KNOWLEDGE_FINAL_DELIMITER}
 
   // Compatibility wrapper for the newer call sites. Uses the proven resilient
   // v2.3.1 transport and retries one transient generation failure only.
-  async function runCaseChatPrompt(caseNumber, investigationId, question, onProgress = null, label = "Case Chat") {
-    return await runFollowupPrompt(caseNumber, investigationId, question, onProgress, {label, retryOnce:true});
+  async function runCaseChatPrompt(
+    caseNumber,
+    investigationId,
+    question,
+    onProgress = null,
+    label = "Case Chat",
+    { forceFresh = false } = {}
+  ) {
+    // Automatic/reuse mode keeps the final exact-prompt duplicate safeguard.
+    // Explicit regeneration is different: every already-existing exact prompt is
+    // excluded so Regenerate truly creates a new Case Chat. If the new POST is
+    // accepted but the response is interrupted, the transport may still recover
+    // the newly-created same-question follow-up because its ID was not in the
+    // pre-submit baseline.
+    let excludedFollowupIds = null;
+    if (forceFresh) {
+      excludedFollowupIds = await existingExactFollowupIds(caseNumber, investigationId, question);
+    } else {
+      const manual = await findCompletedExactPromptInHistory(caseNumber, investigationId, question);
+      if (manual) {
+        onProgress?.(`♻ Reused completed exact prompt Case Chat #${manual.followupId}`);
+        return {
+          answer:manual.answer,
+          followupId:manual.followupId,
+          recovered_from_exact_prompt:true,
+          completedAt:manual.completedAt,
+          attempt:0
+        };
+      }
+    }
+    return await runFollowupPrompt(caseNumber, investigationId, question, onProgress, {
+      label,
+      retryOnce:true,
+      forceFresh,
+      excludedFollowupIds
+    });
   }
 
   function extractFollowupId(payload) {
@@ -6076,9 +6819,12 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     return walk(payload);
   }
 
-  function findFollowupInHistory(payload, question) {
+  function findFollowupInHistory(payload, question, excludedFollowupIds = null) {
     const matches = [];
     const seen = new Set();
+    const excluded = excludedFollowupIds instanceof Set
+      ? excludedFollowupIds
+      : new Set(Array.isArray(excludedFollowupIds) ? excludedFollowupIds.map(Number) : []);
 
     function walk(v) {
       if (!v || typeof v !== "object" || seen.has(v)) return;
@@ -6102,14 +6848,14 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     walk(payload);
 
     const exact = matches
-      .filter(x => x.question === question)
+      .filter(x => x.question === question && !excluded.has(Number(x.id)))
       .sort((a,b) => String(b.created_at).localeCompare(String(a.created_at)));
 
     if (exact.length) return exact[0].id;
     return null;
   }
 
-  async function waitForFollowupId(caseNumber, investigationId, taskId, question, onProgress = null) {
+  async function waitForFollowupId(caseNumber, investigationId, taskId, question, onProgress = null, excludedFollowupIds = null) {
     const deadline = Date.now() + CHAT_TIMEOUT_MS;
     let attempt = 0;
 
@@ -6160,7 +6906,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
             CASECHAT_POLL_TIMEOUT_MS
           );
           const history = await hr.json();
-          const historyId = findFollowupInHistory(history, question);
+          const historyId = findFollowupInHistory(history, question, excludedFollowupIds);
           if (historyId) return historyId;
         } catch (_) {}
       }
@@ -6391,12 +7137,17 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     job.importantTechnicalCaveat = extractFieldBlock(job.auditAnswer, "Important Technical Caveat");
     job.tacLearning = extractFieldBlock(job.auditAnswer, "TAC Learning");
     job.tacActionItem = extractFieldBlock(job.auditAnswer, "TAC Action Item");
+    job.tacLearningOutcome = extractField(job.auditAnswer, "TAC Learning Outcome");
     // Current retrospective-review fields. Legacy labels remain as fallbacks so
     // older, richer Case Chats can be reused without paying for a regeneration.
     job.tacWorkBeforeXsup = extractFieldBlock(job.auditAnswer, "TAC Work Before XSUP") || extractFieldBlock(job.auditAnswer, "What TAC Could Reasonably Do Before Engineering");
     job.xsupEscalationAssessment = extractFieldBlock(job.auditAnswer, "XSUP Escalation Assessment") || extractFieldBlock(job.auditAnswer, "Escalation Assessment");
     job.xsupAvoidable = extractField(job.auditAnswer, "Could XSUP Have Been Avoided") || extractField(job.auditAnswer, "Could Engineering Escalation Have Been Avoided Entirely?");
     job.engineeringContribution = extractFieldBlock(job.auditAnswer, "Engineering Contribution") || extractFieldBlock(job.auditAnswer, "What Required Engineering Expertise");
+    job.backendToolAccessAssessment = extractField(job.auditAnswer, "Backend / Tool Access Assessment");
+    job.backendToolAccessEvidence = extractFieldBlock(job.auditAnswer, "Backend / Tool Access Evidence");
+    job.supportAccessibleAlternative = extractFieldBlock(job.auditAnswer, "Support-Accessible Alternative");
+    job.toolWorkflowGap = extractFieldBlock(job.auditAnswer, "Tool / Workflow Gap");
     job.priorMatchStatus = extractField(job.auditAnswer, "Existing Prior Match") || extractField(job.auditAnswer, "Direct Prior Match Found");
     job.priorReference = extractFieldBlock(job.auditAnswer, "Best Prior Reference") || extractFieldBlock(job.auditAnswer, "Best Prior Match");
     job.priorKnown = extractFieldBlock(job.auditAnswer, "What Was Already Known");
@@ -6404,6 +7155,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     job.priorKnowledgeUseEvidence = extractFieldBlock(job.auditAnswer, "Prior Knowledge Use Evidence");
     job.knowledgeAvailability = extractField(job.auditAnswer, "Knowledge Availability") || extractField(job.auditAnswer, "Knowledge Availability / Channel");
     job.knowledgeChannelGap = extractFieldBlock(job.auditAnswer, "Knowledge Channel Gap");
+    job.knowledgeSourceCoverage = extractFieldBlock(job.auditAnswer, "Knowledge Source Coverage") || extractField(job.auditAnswer, "Knowledge Source Coverage");
     job.priorCouldHelp = extractField(job.auditAnswer, "Could Prior Knowledge Have Narrowed Earlier") || extractField(job.auditAnswer, "Could TAC Have Used This to Recognize the Problem Earlier?");
     job.retrospectiveImprovement = extractFieldBlock(job.auditAnswer, "Retrospective Improvement") || extractFieldBlock(job.auditAnswer, "Primary Improvement Opportunity");
     job.managementSignal = extractField(job.auditAnswer, "Management Signal");
@@ -6434,10 +7186,27 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     job.existingKnowledgeCoverage = extractField(job.auditAnswer, "Existing Knowledge Coverage");
     job.knowledgeAvailability = job.knowledgeAvailability || extractField(job.auditAnswer, "Knowledge Availability / Channel");
     job.knowledgeChannelGap = job.knowledgeChannelGap || extractFieldBlock(job.auditAnswer, "Knowledge Channel Gap");
+    job.existingSalesforceKcsCandidates = extractFieldBlock(job.auditAnswer, "Existing Salesforce KCS Candidates");
+    job.bestExistingKnowledgeReference = extractFieldBlock(job.auditAnswer, "Best Existing Knowledge Reference");
+    job.existingCoverageDetail = extractFieldBlock(job.auditAnswer, "Existing Coverage");
+    job.remainingReusableGap = extractFieldBlock(job.auditAnswer, "Remaining Reusable Gap");
+    job.whyExistingKnowledgeInsufficient = extractFieldBlock(job.auditAnswer, "Why Existing Knowledge Is Not Sufficient");
+    job.knowledgeWorthiness = extractField(job.auditAnswer, "Knowledge Worthiness");
+    job.knowledgeWorthinessReason = extractFieldBlock(job.auditAnswer, "Knowledge Worthiness Reason");
     job.existingKcsCandidate = extractFieldBlock(job.auditAnswer, "Existing KCS Candidate");
     job.existingKcsContentMatch = extractField(job.auditAnswer, "Existing KCS Content Match");
+    job.existingKcsMergeability = extractField(job.auditAnswer, "Existing KCS Mergeability");
+    job.whyNotMergeIntoExistingKcs = extractFieldBlock(job.auditAnswer, "Why Not Merge Into Existing KCS");
     job.existingKcsCoveredContent = extractFieldBlock(job.auditAnswer, "Existing KCS Covered Content");
     job.existingKcsMissingContent = extractFieldBlock(job.auditAnswer, "Existing KCS Missing Content");
+    job.knowledgeActionTargetType = extractField(job.auditAnswer, "Knowledge Action Target Type");
+    job.knowledgeActionTarget = extractFieldBlock(job.auditAnswer, "Knowledge Action Target");
+    job.currentTargetCoverage = extractFieldBlock(job.auditAnswer, "Current Target Coverage");
+    job.targetGapRequiredChange = extractFieldBlock(job.auditAnswer, "Target Gap / Required Change");
+    job.whyThisDestination = extractFieldBlock(job.auditAnswer, "Why This Destination");
+    job.whyCreateVsUpdateNoAction = extractFieldBlock(job.auditAnswer, "Why Create vs Update / No Action");
+    job.whyUpdateVsCreate = extractFieldBlock(job.auditAnswer, "Why Update vs Create");
+    job.sectionsToUpdate = extractFieldBlock(job.auditAnswer, "Sections to Update");
     job.primaryKnowledgeReason = extractFieldBlock(job.auditAnswer, "Primary Knowledge Reason");
     job.secondaryKnowledgeReason = extractFieldBlock(job.auditAnswer, "Secondary Knowledge Reason");
     job.adminTechGuideNeeded = extractField(job.auditAnswer, "Admin/Tech Guide Needed");
@@ -6519,6 +7288,20 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     }
   }
 
+  function sanitizeHumanFacingInternalMechanics(value) {
+    let text = String(value || "");
+    text = text.replace(/\bgoverned by (?:backend )?feature flags?\b/gi, "governed by supported tenant entitlement and platform configuration");
+    text = text.replace(/\bbackend feature flags?\b/gi, "internal entitlement/configuration controls");
+    text = text.replace(/`(?:expose_[a-z0-9_]+|[a-z][a-z0-9_]+(?:_flag|_toggle|_enabled|_metadata)|[A-Z][A-Za-z0-9]+(?:Policy|Violation|Flag|Toggle|Worker|Listener))`/g, "internal configuration");
+    text = text.replace(/\((?:\s*`?[a-z][a-z0-9_]*`?\s*=\s*(?:true|false|null|\d+)\s*,?\s*){1,}\)/gi, "(internal configuration)");
+    text = text.replace(/\b(?:update|modify|change)\s+(?:the\s+)?backend (?:database )?metadata\s*(?:\([^)]*\))?/gi, "complete the required internal entitlement/configuration update");
+    text = text.replace(/\bbackend tenant metadata\s*(?:\([^)]*\))?/gi, "internal tenant configuration");
+    text = text.replace(/\bproduction (?:database|db|firestore)(?:\s+metadata)?\b/gi, "internal platform data");
+    text = text.replace(/\b(?:pod|container|namespace|microservice|internal service|internal proxy|proxy listener|internal listener)\s+`[^`]+`/gi, "internal service component");
+    text = text.replace(/[ \t]{2,}/g, " ");
+    return text.trim();
+  }
+
   function polishReviewCommentText(value) {
     const safeLogon = "A complete logoff/logon can reprioritize synchronization, but it does not guarantee a specific completion time or a sub-hour policy transition. Where deterministic faster policy switching is required, use Endpoint Tags.";
     let text = cleanText(value || "")
@@ -6535,6 +7318,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       .replace(/\.\s+(which|that)\b/gi, ", $1")
       .replace(/\s{2,}/g, " ")
       .trim();
+    text = sanitizeHumanFacingInternalMechanics(text);
     const seen = new Set();
     const sentences = text.split(/(?<=[.!?])\s+/).map(cleanText).filter(Boolean).filter(sentence => {
       const key = normalizeFieldValueForCompare(sentence);
@@ -6571,8 +7355,8 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     const finding = completeHumanFinding(job || {technicalConclusion:extractFieldBlock(auditText,"Technical Conclusion"), technicalEvidenceExplanation:extractFieldBlock(auditText,"Technical Conclusion Evidence Explanation")}, 4);
     const commentParagraphs = [];
     if (issue) commentParagraphs.push(limitHumanText(issue, 900));
-    const explanation = polishReviewCommentText(primaryWhy || "");
-    if (explanation && normalizeFieldValueForCompare(explanation) !== normalizeFieldValueForCompare(issue)) commentParagraphs.push(limitHumanText(explanation, 900));
+    // The field-specific rationale is rendered once under "Why this value".
+    // Keep the Comment focused on the reported issue, technical finding and practical action.
     const completeFinding = polishReviewCommentText(finding);
     const already = commentParagraphs.join(" ");
     if (completeFinding && normalizeFieldValueForCompare(completeFinding) !== normalizeFieldValueForCompare(issue)) {
@@ -6603,14 +7387,25 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     const reviewedFieldNames = applicable.length
       ? [...new Set(applicable.map(f => f.name))]
       : (profile?.primaryFieldOrder?.length ? [...profile.primaryFieldOrder] : ["TAC-Owned Field"]);
-    const reviewedFieldLabel = reviewedFieldNames.join(" & ");
+    const reviewedFieldLabel = reviewedFieldNames.join("; ");
     const productName = job ? productLabel(job) : cleanText(options.product || "Product");
-    const reviewHeading = `***XSUP APAC TAC ${reviewedFieldLabel} Review — ${xsup}${productName ? ` | ${productName}` : ""}***`;
+    const reviewHeading = `***XSUP APAC Retrospective Review — ${xsup}${productName ? ` | ${productName}` : ""}***`;
+    const whyValueParts = applicable
+      .map(f => ({name:f.name, why:polishReviewCommentText(humanFacingWhy(f.why) || "")}))
+      .filter(x => x.why);
+    const whyValue = whyValueParts.length === 1
+      ? whyValueParts[0].why
+      : whyValueParts.map(x => `${x.name}: ${x.why}`).join(" ");
 
     const lines = [
       reviewHeading,
       "",
+      `***${reviewedFieldNames.length === 1 ? "Reviewed Field" : "Reviewed Fields"}:*** ${reviewedFieldLabel}`,
+      "",
       `***Correct Value:*** ${correctValue}`,
+      "",
+      "***Why this value:***",
+      whyValue || "The available technical evidence supports the recommended value shown above; no additional field-specific rationale was returned.",
       "",
       "***Comment:***",
       commentParagraphs.filter(Boolean).join("\n\n") || "No concise technical comment was returned.",
@@ -6623,16 +7418,43 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     if (plan.summary) {
       lines.push(plan.summary);
       for (const block of plan.blocks) {
-        lines.push("", `${block.label} action:`, "", limitHumanText(block.instruction, 1000));
-        if (block.reason) lines.push("", "Why:", "", limitHumanText(block.reason, 1200));
+        const normalizedAction = normalizeDecision(block.action);
+        const decision = block.decision || knowledgeActionDecisionContext(job, auditText);
+        if (normalizedAction === "CREATE KCS") {
+          lines.push("", "***KCS target:***", "", limitHumanText(decision.target || "A searchable symptom/error/task-focused article based on the reusable gap identified in this retrospective.", 900));
+          if (decision.bestExisting) lines.push("", "***Closest existing knowledge:***", "", limitHumanText(decision.bestExisting, 1000));
+          if (decision.covered) lines.push("", "***Existing coverage:***", "", limitHumanText(decision.covered, 900));
+          if (decision.gap) lines.push("", "***Missing reusable gap:***", "", limitHumanText(decision.gap, 1100));
+          lines.push("", "***Why create instead of update / no action:***", "", limitHumanText(block.reason || decision.whyCreate || "A durable reusable gap remains and no inspected Salesforce KCS was established as a better update target.", 1300));
+          if (decision.gap) lines.push("", "***KCS should cover:***", "", limitHumanText(decision.gap, 1100));
+        } else if (normalizedAction === "UPDATE EXISTING KCS") {
+          const ctx = existingKcsActionContext(job, auditText);
+          const ref = ctx.ref || {};
+          lines.push("", "***Existing KCS:***", "", ref.title || cleanExistingKcsIdentity(job?.existingKcsCandidate || "Specific existing KCS identified by the Audit"));
+          if (ref.articleId) lines.push("", "***Article ID:***", "", ref.articleId);
+          if (ref.link) lines.push("", "***Link:***", "", ref.link);
+          if (ctx.covered || decision.covered) lines.push("", "***Current coverage:***", "", limitHumanText(ctx.covered || decision.covered, 900));
+          if (ctx.missing || decision.gap) lines.push("", "***Update needed:***", "", limitHumanText(ctx.missing || decision.gap, 1100));
+          if (decision.sections) lines.push("", "***Sections to update:***", "", limitHumanText(decision.sections, 900));
+          lines.push("", "***Why update instead of create:***", "", limitHumanText(block.reason || decision.whyUpdate || "The inspected Salesforce KCS materially overlaps this issue and can be extended, so updating it avoids an unnecessary duplicate.", 1200));
+        } else {
+          lines.push("", `${block.label} action:`, "", limitHumanText(block.instruction, 1000));
+          if (block.reason) lines.push("", "Why:", "", limitHumanText(block.reason, 1200));
+        }
       }
+    } else if (normalizeDecision(job?.knowledgeAction || extractField(auditText, "Primary Knowledge Action")) === "NO KNOWLEDGE ACTION") {
+      const decision = knowledgeActionDecisionContext(job, auditText);
+      lines.push("No maintained knowledge change recommended.");
+      if (decision.bestExisting) lines.push("", "***Existing knowledge:***", "", limitHumanText(decision.bestExisting, 1000));
+      const noActionReason = decision.whyCreate || decision.worthinessReason || cleanHumanLearning(job?.knowledgeDecisionExplanation || extractFieldBlock(auditText, "Knowledge Decision Explanation"), 2);
+      if (noActionReason) lines.push("", "***Why no knowledge action:***", "", limitHumanText(noActionReason, 1200));
     } else if (tacAction) {
       lines.push("TAC action:", "", limitHumanText(tacAction, 1200));
     } else {
       lines.push("No additional TAC or knowledge action identified.");
     }
 
-    return lines.join("\n").replace(/\n{4,}/g,"\n\n\n").trim();
+    return sanitizeHumanFacingInternalMechanics(lines.join("\n")).replace(/\n{4,}/g,"\n\n\n").trim();
   }
 
   function extractReferences(...sources) {
@@ -6842,8 +7664,8 @@ ${KNOWLEDGE_FINAL_DELIMITER}
   function knowledgeWorkExpected(job) {
     if (!job) return false;
     if (job.directKnowledgeOnly) return true;
-    if (job.manualAuditOnly) return false;
-    if (!state.autoGenerateKnowledge || !job.auditAnswer) return false;
+    if (job.manualAuditOnly || job.auditOnlyRun || job.executionPlan === "audit_only" || job.executionPlan === "skip") return false;
+    if (!jobKnowledgeEnabled(job) || !job.auditAnswer) return false;
     const requests = job.knowledgeArtifactRequests?.length
       ? job.knowledgeArtifactRequests
       : knowledgeArtifactRequests(job);
@@ -6907,6 +7729,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
   function overallUiState(job) {
     if (!job) return "pending";
 
+    if (job.status === "staged") return "pending";
     if (job.status === "failed") return "failed";
     if (job.status === "stopped") return "stopped";
     if (job.status === "needs_selection" || job.status === "needs_sfdc" || job.status === "needs_product") return "action";
@@ -6978,6 +7801,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     if (knowledgeState === "failed") return "Knowledge failed";
     if (knowledgeState === "outdated") return "Knowledge needs regeneration";
 
+    if (job.status === "staged") return job.executionPlan === "skip" ? "Skipped" : "Ready to run";
     if (job.status === "completed") {
       return primaryReviewVerdict(job) || job.retrospectiveEligibility || "Complete";
     }
@@ -7044,6 +7868,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       ["active", "waiting", "failed", "outdated"].includes(knowledgeUiState(job))
     ) return overallActivity;
 
+    if (job.status === "staged") return job.executionPlan === "skip" ? "Disabled for this run" : `${workflowPlanLabel(job.executionPlan)} · ${generationPlanLabelForJob(job)}`;
     if (job.status === "queued") {
       const pos = queuePosition(job);
       return pos ? `Queued · #${pos} next` : "Queued";
@@ -7112,6 +7937,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     if (job.status === "completed" && knowledgeState === "failed") return "Audit 100% · Knowledge failed";
     if (job.status === "completed" && knowledgeState === "outdated") return "Audit 100% · Knowledge needs regeneration";
 
+    if (job.status === "staged") return job.executionPlan === "skip" ? "Skipped" : "Ready";
     if (job.status === "completed") return "100%";
     if (job.status === "failed") return `Failed at ~${Math.round(clampProgress(job.overallProgress || 0))}%`;
     if (job.status === "stopped") return `Stopped at ~${Math.round(clampProgress(job.overallProgress || 0))}%`;
@@ -7157,9 +7983,10 @@ ${KNOWLEDGE_FINAL_DELIMITER}
 
   function dashboardCounts(jobs = [...state.jobs.values()]) {
     return {
+      ready: jobs.filter(j => j.status === "staged" && j.executionPlan !== "skip" && !j.promptNeedsSfdcSelection && !j.promptNeedsSfdcEntry).length,
       running: jobs.filter(j => overallUiState(j) === "active").length,
       queued: jobs.filter(j => overallUiState(j) === "waiting").length,
-      chooseSfdc: jobs.filter(j => j.status === "needs_selection" || j.status === "needs_sfdc").length,
+      chooseSfdc: jobs.filter(j => j.status === "needs_selection" || j.status === "needs_sfdc" || j.promptNeedsSfdcSelection || j.promptNeedsSfdcEntry).length,
       chooseProduct: jobs.filter(j => j.status === "needs_product").length,
       complete: jobs.filter(jobWorkflowComplete).length,
       failed: jobs.filter(j => overallUiState(j) === "failed").length,
@@ -7174,6 +8001,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
   function refreshDashboardStats() {
     const counts = dashboardCounts();
     const values = {
+      "Ready": counts.ready,
       "Running": counts.running,
       "Queued": counts.queued,
       "Choose SFDC": counts.chooseSfdc,
@@ -7187,6 +8015,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       "Failed": counts.failed
     };
     const classes = {
+      "Ready": counts.ready ? "ok" : "",
       "Running": counts.running ? "run" : "",
       "Queued": counts.queued ? "warn" : "",
       "Choose SFDC": counts.chooseSfdc ? "warn" : "",
@@ -7307,6 +8136,42 @@ ${KNOWLEDGE_FINAL_DELIMITER}
   // UI RENDERING
   // ===========================================================================
 
+  function currentKcsCopyPrompt(job) {
+    if (!job) return "";
+    if (job.stagedKcsPrompt) return job.stagedKcsPrompt;
+    if (job.knowledgeDraftPrompt && (job.knowledgeArtifactType === "KCS_DRAFT" || job.knowledgeArtifactType === "KCS_UPDATE")) return job.knowledgeDraftPrompt;
+    const artifacts = Array.isArray(job.knowledgeArtifacts) ? job.knowledgeArtifacts : [];
+    const kcs = artifacts.find(item => (item.type === "KCS_DRAFT" || item.type === "KCS_UPDATE") && item.draftPrompt);
+    return kcs?.draftPrompt || "";
+  }
+
+  function auditPromptAvailability(job) {
+    if (!job) return {enabled:false, reason:"No XSUP selected."};
+    if (job.directKnowledgeOnly || job.executionPlan === "kcs_only") return {enabled:false, reason:"Audit is skipped in KCS-only workflow."};
+    if (job.reanalyzeTaco) return {enabled:false, reason:"Run Mode requests fresh TACO; exact Audit prompt is available after TACO refresh."};
+    if (job.status === "staged" && ["fresh_audit","fresh_all"].includes(job.regenerationPlan || "")) {
+      return {enabled:false, reason:"Run Mode forces a fresh Audit. Switch Run Mode to Automatic before manually running a prompt that should be reused."};
+    }
+    if (job.lastPrompt) return {enabled:true, reason:"Copies the exact fully materialized Audit prompt for the current evidence/TACO context."};
+    if (job.promptPrepStatus === "loading") return {enabled:false, reason:"Preparing read-only TACO / Case Chat context."};
+    return {enabled:false, reason:job.promptPrepReason || "Exact Audit prompt is not materialized yet."};
+  }
+
+  function kcsPromptAvailability(job) {
+    if (!job) return {enabled:false, reason:"No XSUP selected."};
+    if (job.executionPlan === "audit_only" || job.auditOnlyRun) return {enabled:false, reason:"Current workflow is Audit only."};
+    if (job.reanalyzeTaco) return {enabled:false, reason:"Run Mode requests fresh TACO; exact KCS prompt is available after TACO refresh."};
+    if (job.status === "staged" && ["fresh_knowledge","fresh_all"].includes(job.regenerationPlan || "")) {
+      return {enabled:false, reason:"Run Mode forces fresh Knowledge generation. Switch Run Mode to Automatic before manually running a KCS prompt that should be reused."};
+    }
+    const prompt = currentKcsCopyPrompt(job);
+    if (prompt) return {enabled:true, reason:"Copies the exact fully materialized KCS generation prompt for the current routing/evidence context."};
+    if (!job.directKnowledgeOnly && !job.auditAnswer) return {enabled:false, reason:"Available after a reusable/completed Audit determines whether KCS is the correct Knowledge action."};
+    if (!job.directKnowledgeOnly && job.auditAnswer && !kcsPromptRequestForJob(job)) return {enabled:false, reason:"The current Audit does not route this XSUP to a KCS-family artifact."};
+    if (job.promptPrepStatus === "loading") return {enabled:false, reason:"Preparing read-only TACO / Case Chat context."};
+    return {enabled:false, reason:job.promptPrepReason || "Exact KCS prompt is not materialized yet."};
+  }
+
   function dashboardRenderSignature(jobs) {
     // Only DOM-shape changes belong in the render signature. Routine progress,
     // verdict, review, heartbeat, and knowledge changes are refreshed in place.
@@ -7314,14 +8179,15 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     // work is active, which caused visible flashing and stale Completed cells.
     return JSON.stringify((jobs || []).map(job => ({
       xsup: job.xsup || "",
-      sfdcMode: job.status === "needs_sfdc" ? "enter" : job.status === "needs_selection" ? "choose" : job.caseNumber ? "linked" : "none",
+      sfdcMode: (job.status === "needs_sfdc" || job.promptNeedsSfdcEntry) ? "enter" : (job.status === "needs_selection" || job.promptNeedsSfdcSelection) ? "choose" : job.caseNumber ? "linked" : "none",
       caseNumber: job.caseNumber || "",
       sfdcUrl: job.targetLinks?.sfdc || "",
       productMode: job.status === "needs_product"
         ? "choose"
         : job.productKey ? "linked" : "none",
       productKey: job.productKey || "",
-      productSelectionSource: job.productSelectionSource || ""
+      productSelectionSource: job.productSelectionSource || "",
+      preflight: job.status === "staged" ? `${job.dashboardSelected?1:0}|${job.executionPlan||""}|${job.regenerationPlan||""}|${job.reanalyzeTaco?1:0}` : "running"
     })));
   }
 
@@ -7350,10 +8216,10 @@ ${KNOWLEDGE_FINAL_DELIMITER}
           : "—";
 
       const sfdcUrl = safeUrl(job.targetLinks?.sfdc);
-      const sfdcAction = job.status === "needs_sfdc"
+      const sfdcAction = job.status === "needs_sfdc" || job.promptNeedsSfdcEntry
         ? `<button class="xa-table-link xa-enter-sfdc" data-xsup="${escapeHtml(job.xsup)}">Enter SFDC</button>`
-        : job.status === "needs_selection"
-          ? `<button class="xa-table-link xa-choose-sfdc" data-xsup="${escapeHtml(job.xsup)}">Choose SFDC</button>`
+        : job.status === "needs_selection" || job.promptNeedsSfdcSelection
+          ? `<button class="xa-table-link xa-choose-sfdc" data-xsup="${escapeHtml(job.xsup)}">Choose SFDC${job.sfdcCandidates?.length > 1 ? ` (${job.sfdcCandidates.length})` : ""}</button>`
         : job.caseNumber && sfdcUrl
           ? `<a class="xa-table-link" href="${escapeHtml(sfdcUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(job.caseNumber)}</a>`
           : caseText;
@@ -7375,7 +8241,10 @@ ${KNOWLEDGE_FINAL_DELIMITER}
 
       return `
         <tr data-job-row="${escapeHtml(job.xsup)}" class="xa-dashboard-row xa-row-${escapeHtml(visualState)}">
+          <td><input class="xa-job-select" data-xsup="${escapeHtml(job.xsup)}" type="checkbox" ${job.dashboardSelected ? "checked" : ""} ${job.status === "staged" ? "" : "disabled"} data-tooltip="Include this XSUP when Run Selected is clicked." aria-label="Run ${escapeHtml(job.xsup)}"></td>
           <td><button class="xa-table-link xa-open-job" data-xsup="${escapeHtml(job.xsup)}">${escapeHtml(job.xsup)}</button></td>
+          <td>${workflowControlHtml(job)}</td>
+          <td>${generationControlHtml(job)}</td>
           <td>${productAction}</td>
           <td>${sfdcAction}</td>
           <td>${progressBarHtml(job)}</td>
@@ -7402,12 +8271,16 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     dash.innerHTML = `
       <div class="xa-dashboard-head">
         <div>
-          <h2>Live Audit Dashboard</h2>
-          <p>Mixed-product XSUP review. High-confidence product detection continues automatically; lower-confidence or conflicting cases pause only that XSUP for confirmation. Two audits + two independent knowledge workers with a shared maximum of two active Case Chat generations.</p>
+          <h2>XSUP Dashboard</h2>
+          <p>Load first, choose the Workflow and Run Mode for each XSUP, then run only the selected rows. <strong>Automatic mode checks freshness first:</strong> it reuses usable TACO, Audit and Knowledge results only while they remain valid for the current case evidence. Newer Jira/SFDC evidence prevents stale downstream reuse. TACO is regenerated only when explicitly selected or when no usable TACO analysis exists.</p>
         </div>
         <span>${jobs.length} XSUP${jobs.length === 1 ? "" : "s"}</span>
       </div>
+      ${jobs.length ? `<div class="xa-preflight-controls">
+        <button id="xa-run-selected" class="xa-run-selected" data-tooltip="Start only the checked XSUP rows using each row's Workflow and Run Mode settings.">Run Selected</button>
+      </div>` : ""}
       <div class="xa-stats">
+        ${stat("Ready", counts.ready, "ok")}
         ${stat("Running", counts.running, "run")}
         ${stat("Queued", counts.queued)}
         ${stat("Choose SFDC", counts.chooseSfdc, counts.chooseSfdc ? "warn" : "")}
@@ -7420,8 +8293,24 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       </div>
       <div class="xa-dashboard-table-wrap">
         <table class="xa-dashboard-table">
-          <thead><tr><th>XSUP</th><th>Product</th><th>SFDC</th><th>Progress</th><th>Current activity</th><th>Last update</th><th>Reviewed fields</th><th>Review verdict</th><th>Change needed</th><th>Knowledge artifact</th><th>Elapsed</th><th></th></tr></thead>
-          <tbody>${rows || '<tr><td colspan="12" class="xa-empty-cell">Run audits to populate the dashboard.</td></tr>'}</tbody>
+          <thead><tr>
+            <th><input id="xa-select-all-header" type="checkbox" data-tooltip="Select or clear all loaded XSUPs that are ready to run." aria-label="Select all loaded XSUPs"></th>
+            <th>${dashboardHeading("XSUP", "The XSUP issue being processed. Click the XSUP number to open its detailed dashboard view.")}</th>
+            <th>${dashboardHeading("Workflow", "Choose what this XSUP should run: Audit + Knowledge, Audit only, or the dedicated KCS-only workflow.")}</th>
+            <th>${dashboardHeading("Run Mode", "Automatic mode checks freshness first. It reuses usable TACO, Audit and Knowledge results only while they remain valid for current case evidence. If newer Jira/SFDC evidence exists, stale Audit/Knowledge results are not reused. TACO is regenerated only when explicitly selected or when no usable TACO analysis exists. Choose a Regenerate option to force the listed stage or stages to run fresh.")}</th>
+            <th>${dashboardHeading("Product", "Detected product profile. Low-confidence or ambiguous detection pauses only this XSUP for reviewer confirmation.")}</th>
+            <th>${dashboardHeading("SFDC", "Linked Salesforce case. If automatic mapping is unavailable, this row will request the 8-digit SFDC case number.")}</th>
+            <th>${dashboardHeading("Progress", "Overall progress for this XSUP across resolution, TACO analysis, Audit and Knowledge stages that apply to its workflow.")}</th>
+            <th>${dashboardHeading("Current activity", "The operation currently running or waiting for this XSUP.")}</th>
+            <th>${dashboardHeading("Last update", "How recently this XSUP reported meaningful progress. Warnings here can indicate a stalled or waiting backend operation.")}</th>
+            <th>${dashboardHeading("Reviewed fields", "Support-owned retrospective field or fields evaluated by the Audit for this XSUP.")}</th>
+            <th>${dashboardHeading("Review verdict", "Audit conclusion for the applicable retrospective field. This is based on the available evidence and is not proof that the currently saved Jira value was retrieved.")}</th>
+            <th>${dashboardHeading("Change needed", "Whether the Audit recommends a Support-owned ticket-field change based on the evidence it could validate.")}</th>
+            <th>${dashboardHeading("Knowledge artifact", "Audit-selected Knowledge outcome and generation status, such as KCS, Admin/Tech Guide, Runbook, Known Issue/Release Note, or no Knowledge action.")}</th>
+            <th>${dashboardHeading("Elapsed", "Elapsed processing time for this XSUP during the current run.")}</th>
+            <th>${dashboardHeading("Details", "Open the XSUP detail view for the full Audit, pipeline state, references and artifact controls.")}</th>
+          </tr></thead>
+          <tbody>${rows || '<tr><td colspan="15" class="xa-empty-cell">Load XSUPs to configure the run.</td></tr>'}</tbody>
         </table>
       </div>
     `;
@@ -7444,6 +8333,53 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         if (job) showProductChooser(job);
       };
     });
+
+    const syncHeaderSelection = () => {
+      const header = dash.querySelector("#xa-select-all-header");
+      if (!header) return;
+      const selectable = [...state.jobs.values()].filter(job => job.status === "staged" && job.executionPlan !== "skip");
+      const selectedCount = selectable.filter(job => job.dashboardSelected).length;
+      header.disabled = !selectable.length;
+      header.checked = Boolean(selectable.length && selectedCount === selectable.length);
+      header.indeterminate = Boolean(selectedCount > 0 && selectedCount < selectable.length);
+    };
+
+    dash.querySelectorAll(".xa-job-select").forEach(el => {
+      el.onchange = () => {
+        const job=state.jobs.get(el.dataset.xsup);
+        if(job?.status==="staged") job.dashboardSelected=Boolean(el.checked);
+        syncHeaderSelection();
+      };
+    });
+    dash.querySelectorAll(".xa-job-plan").forEach(el => {
+      el.onchange = () => {
+        const job=state.jobs.get(el.dataset.xsup);
+        if(job?.status==="staged") {
+          job.executionPlan=el.value;
+          job.regenerationPlan="reuse";
+          job.reanalyzeTaco=false;
+          normalizeGenerationForWorkflow(job);
+          state.dashboardRenderSignature="";
+          renderDashboard();
+        }
+      };
+    });
+    dash.querySelectorAll(".xa-job-refresh").forEach(el => {
+      el.onchange = () => {
+        const job=state.jobs.get(el.dataset.xsup);
+        if(job?.status==="staged") {
+          applyGenerationChoice(job, el.value);
+          state.dashboardRenderSignature="";
+          renderDashboard();
+        }
+      };
+    });
+    dash.querySelector("#xa-select-all-header")?.addEventListener("change", event => {
+      const checked = Boolean(event.currentTarget.checked);
+      updateStagedJobs(job => { job.dashboardSelected=checked; });
+    });
+    dash.querySelector("#xa-run-selected")?.addEventListener("click", runSelectedJobs);
+    syncHeaderSelection();
 
     // Normalize all dynamic cells from the authoritative workflow state after a
     // rare structural rebuild. Routine progress thereafter stays in place.
@@ -7575,16 +8511,35 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       sfdc:"",
       tacopilot:`${location.origin}/taco/case/${caseNumber}`
     };
-    job.status = "queued";
+    const stagedPreflight = job.status === "staged" || job.promptNeedsSfdcEntry || job.promptNeedsSfdcSelection;
+    job.promptNeedsSfdcEntry = false;
+    job.promptNeedsSfdcSelection = false;
     job.stageLabel = "SFDC entered";
     job.steps.resolve = `✓ ${caseNumber} entered`;
     job.overallProgress = Math.max(5, Number(job.overallProgress || 0));
-    job.currentActivity = `${caseNumber} entered · waiting for worker`;
     job.lastHeartbeatAt = Date.now();
     job.lastProgressChangeAt = Date.now();
     job.error = "";
-    if (!state.queue.includes(job.xsup)) state.queue.push(job.xsup);
     closeSFDCChooser();
+    if (stagedPreflight) {
+      job.status = "staged";
+      job.currentActivity = `${caseNumber} entered · ready to run`;
+      job.evidence = null;
+      job.report = null;
+      job.selectedEvidence = null;
+      job.investigationId = null;
+      job.lastPrompt = "";
+      job.stagedKcsPrompt = "";
+      job.promptPrepStatus = "pending";
+      job.promptPrepReason = "Open this XSUP to prepare/copy the exact manual prompt, or click Run Selected to continue automatically.";
+      state.dashboardRenderSignature = "";
+      renderJobList(); renderDashboard(); if (state.selectedXsup === job.xsup) renderSelectedJob();
+      if (state.viewMode === "detail" && state.selectedXsup === job.xsup) void prepareStagedPromptContext(job);
+      return true;
+    }
+    job.status = "queued";
+    job.currentActivity = `${caseNumber} entered · waiting for worker`;
+    if (!state.queue.includes(job.xsup)) state.queue.push(job.xsup);
     renderJobList(); renderDashboard(); if (state.selectedXsup === job.xsup) renderSelectedJob();
     ensureBatchRuntime(); updateBatchStatus(); pumpQueue();
     return true;
@@ -7643,24 +8598,44 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       sfdc: candidate.sfdc_url || "",
       tacopilot: `${location.origin}/taco/case/${candidate.case_number}`
     };
-    job.status = "queued";
+    const stagedPreflight = job.status === "staged" || job.promptNeedsSfdcSelection || job.promptNeedsSfdcEntry;
+    job.promptNeedsSfdcSelection = false;
+    job.promptNeedsSfdcEntry = false;
     job.stageLabel = "SFDC selected";
     job.steps.resolve = `✓ ${candidate.case_number} selected`;
     job.overallProgress = Math.max(5, Number(job.overallProgress || 0));
-    job.currentActivity = "SFDC selected · waiting for worker";
     job.lastHeartbeatAt = Date.now();
     job.lastProgressChangeAt = Date.now();
     job.error = "";
-
-    if (!state.queue.includes(job.xsup)) state.queue.push(job.xsup);
     closeSFDCChooser();
-    renderJobList();
-    renderDashboard();
 
-    if (state.viewMode === "detail" && state.selectedXsup === xsup) {
-      renderSelectedJob();
+    if (stagedPreflight) {
+      job.status = "staged";
+      job.currentActivity = "SFDC selected · ready to run";
+      job.evidence = null;
+      job.report = null;
+      job.selectedEvidence = null;
+      job.investigationId = null;
+      job.lastPrompt = "";
+      job.stagedKcsPrompt = "";
+      job.promptPrepStatus = "pending";
+      job.promptPrepReason = "Open this XSUP to prepare/copy the exact manual prompt, or click Run Selected to continue automatically.";
+      state.dashboardRenderSignature = "";
+      renderJobList();
+      renderDashboard();
+      if (state.viewMode === "detail" && state.selectedXsup === xsup) {
+        renderSelectedJob();
+        void prepareStagedPromptContext(job);
+      }
+      return;
     }
 
+    job.status = "queued";
+    job.currentActivity = "SFDC selected · waiting for worker";
+    if (!state.queue.includes(job.xsup)) state.queue.push(job.xsup);
+    renderJobList();
+    renderDashboard();
+    if (state.viewMode === "detail" && state.selectedXsup === xsup) renderSelectedJob();
     ensureBatchRuntime();
     job.batchRunId = state.batchRunId;
     updateBatchStatus();
@@ -7720,6 +8695,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     job.knowledgeProgress = "";
     job.knowledgeArtifacts = [];
     job.knowledgeArtifactRequests = knowledgeArtifactRequests(job);
+    job.knowledgeDraftPrompt = "";
     job.knowledgeAnswer = "";
     job.knowledgeRawAnswer = "";
     job.knowledgeDraftAnswer = "";
@@ -7781,6 +8757,11 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       if (!state.queue.includes(job.xsup)) state.queue.push(job.xsup);
       ensureBatchRuntime();
       pumpQueue();
+    } else if (job.status === "staged" && !changed) {
+      job.promptPrepStatus = "pending";
+      job.promptPrepError = "";
+      job.promptPrepReason = "Open this XSUP to prepare/copy the exact manual prompt, or click Run Selected to continue automatically.";
+      if (state.viewMode === "detail" && state.selectedXsup === job.xsup) void prepareStagedPromptContext(job);
     }
 
     renderJobList();
@@ -7893,7 +8874,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     }
     state.jobListRenderSignature = listSignature;
     if (!jobs.length) {
-      list.innerHTML = `<div class="xa-job-empty">Paste one or more XSUP IDs above and click Run Audit(s).</div>`;
+      list.innerHTML = `<div class="xa-job-empty">Paste one or more XSUP/SFDC jobs above and click Load XSUPs.</div>`;
       state.dashboardRenderSignature = "";
       renderDashboard();
       return;
@@ -7933,6 +8914,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
 
   function updateBatchStatus() {
     const jobs = [...state.jobs.values()];
+    const staged = jobs.filter(j => j.status === "staged" && j.executionPlan !== "skip").length;
     const running = jobs.filter(j => j.status === "running").length;
     const queued = jobs.filter(j => j.status === "queued").length;
     const completed = jobs.filter(jobWorkflowComplete).length;
@@ -7958,6 +8940,9 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       if (failed) parts.push(`${failed} audit failed`);
       if (knowledgeFailed) parts.push(`${knowledgeFailed} knowledge failed`);
       text = `${parts.join(" · ")} · audit workers ${state.concurrency} · knowledge workers ${state.knowledgeConcurrency}`;
+    } else if (staged) {
+      text = `${staged} loaded · configure the dashboard and click Run Selected`;
+      kind = "ok";
     } else if (needsSelection || needsProduct) {
       const waits = [];
       if (needsSelection) waits.push(`${needsSelection} waiting for SFDC selection`);
@@ -8259,7 +9244,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
 
     const stages = [
       ["resolve", "Resolve SFDC case", job.steps.resolve || (job.caseNumber || "Not started"), ""],
-      ["taco", "TACO Analysis", tacoDetail, "Freshness is automatic. Completed TACO is reused when no newer Jira/SFDC evidence exists."],
+      ["taco", "TACO Analysis", tacoDetail, "A usable completed TACO report is reused by default. If newer Jira/SFDC evidence exists, the Auditor flags it and keeps the original evidence current; choose Regenerate TACO Analysis when you want a fresh TACO report."],
       ["evidence", "Original evidence", job.steps.evidence || "Not started", "Original Jira/SFDC evidence used to prove Support-owned field decisions."],
       ["audit", "Retrospective audit",
         job.auditReuseStatus === "reused"
@@ -8562,6 +9547,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     job.knowledgeReuseReason = "Manual KCS-only recovery requested from retained current TACO evidence.";
     job.knowledgeAnswer = "";
     job.knowledgeRawAnswer = "";
+    job.knowledgeDraftPrompt = "";
     job.knowledgeDraftAnswer = "";
     job.knowledgeDraftFollowupId = null;
     job.knowledgeDraftCompletedAt = null;
@@ -8599,6 +9585,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     job.knowledgeReuseReason = "Manual knowledge regeneration requested.";
     job.knowledgeAnswer = "";
     job.knowledgeRawAnswer = "";
+    job.knowledgeDraftPrompt = "";
     job.knowledgeDraftAnswer = "";
     job.knowledgeDraftFollowupId = null;
     job.knowledgeDraftCompletedAt = null;
@@ -8712,6 +9699,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     job.knowledgeProgress = "";
     job.knowledgeAnswer = "";
     job.knowledgeRawAnswer = "";
+    job.knowledgeDraftPrompt = "";
     job.knowledgeDraftAnswer = "";
     job.knowledgeDraftFollowupId = null;
     job.knowledgeDraftCompletedAt = null;
@@ -8850,6 +9838,89 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     return out;
   }
 
+  function meaningfulKnowledgeText(value) {
+    const text = cleanText(value || "");
+    if (!text || /^(?:none|none identified|none established|not applicable|n\/a|undetermined|unknown|not established)$/i.test(text)) return "";
+    return text;
+  }
+
+  function knowledgeActionDecisionContext(job, auditText = "") {
+    const pick = (...values) => values.map(meaningfulKnowledgeText).find(Boolean) || "";
+    const targetType = pick(job?.knowledgeActionTargetType, extractField(auditText, "Knowledge Action Target Type"));
+    let target = pick(
+      job?.knowledgeActionTarget,
+      extractFieldBlock(auditText, "Knowledge Action Target"),
+      job?.targetKnowledgeLocation,
+      extractFieldBlock(auditText, "Target Knowledge Location")
+    );
+    if (/^(?:new\s+)?salesforce\s+kcs|salesforce\s+knowledge|kcs\s+draft$/i.test(target)) target = "";
+    if (!target) {
+      const issue = pick(job?.reportedIssue, extractFieldBlock(auditText, "Reported Issue"));
+      if (issue) target = cleanHumanLearning(issue, 1);
+    }
+
+    const existingCandidate = pick(
+      job?.existingSalesforceKcsCandidates,
+      extractFieldBlock(auditText, "Existing Salesforce KCS Candidates"),
+      job?.existingKcsCandidate,
+      extractFieldBlock(auditText, "Existing KCS Candidate")
+    );
+    const bestExisting = pick(
+      job?.bestExistingKnowledgeReference,
+      extractFieldBlock(auditText, "Best Existing Knowledge Reference"),
+      existingCandidate,
+      job?.priorReference,
+      extractFieldBlock(auditText, "Best Prior Reference")
+    );
+    const covered = pick(
+      job?.currentTargetCoverage,
+      extractFieldBlock(auditText, "Current Target Coverage"),
+      job?.existingCoverageDetail,
+      extractFieldBlock(auditText, "Existing Coverage"),
+      job?.existingKcsCoveredContent,
+      extractFieldBlock(auditText, "Existing KCS Covered Content"),
+      job?.priorKnown,
+      extractFieldBlock(auditText, "What Was Already Known")
+    );
+    const gap = pick(
+      job?.targetGapRequiredChange,
+      extractFieldBlock(auditText, "Target Gap / Required Change"),
+      job?.remainingReusableGap,
+      extractFieldBlock(auditText, "Remaining Reusable Gap"),
+      job?.existingKcsMissingContent,
+      extractFieldBlock(auditText, "Existing KCS Missing Content"),
+      job?.knowledgeGap,
+      extractFieldBlock(auditText, "Knowledge Gap")
+    );
+    const mergeability = pick(job?.existingKcsMergeability, extractField(auditText, "Existing KCS Mergeability"));
+    const whyNotMerge = pick(job?.whyNotMergeIntoExistingKcs, extractFieldBlock(auditText, "Why Not Merge Into Existing KCS"));
+    const whyCreate = pick(
+      whyNotMerge,
+      job?.whyCreateVsUpdateNoAction,
+      extractFieldBlock(auditText, "Why Create vs Update / No Action"),
+      job?.whyExistingKnowledgeInsufficient,
+      extractFieldBlock(auditText, "Why Existing Knowledge Is Not Sufficient"),
+      job?.whyThisDestination,
+      extractFieldBlock(auditText, "Why This Destination"),
+      job?.knowledgeDecisionExplanation,
+      extractFieldBlock(auditText, "Knowledge Decision Explanation"),
+      job?.primaryKnowledgeReason,
+      extractFieldBlock(auditText, "Primary Knowledge Reason")
+    );
+    const whyUpdate = pick(
+      job?.whyUpdateVsCreate,
+      extractFieldBlock(auditText, "Why Update vs Create"),
+      job?.whyThisDestination,
+      extractFieldBlock(auditText, "Why This Destination"),
+      job?.knowledgeDecisionExplanation,
+      extractFieldBlock(auditText, "Knowledge Decision Explanation")
+    );
+    const sections = pick(job?.sectionsToUpdate, extractFieldBlock(auditText, "Sections to Update"));
+    const channelGap = pick(job?.knowledgeChannelGap, extractFieldBlock(auditText, "Knowledge Channel Gap"));
+    const worthinessReason = pick(job?.knowledgeWorthinessReason, extractFieldBlock(auditText, "Knowledge Worthiness Reason"));
+    return {targetType, target, existingCandidate, bestExisting, covered, gap, mergeability, whyNotMerge, whyCreate, whyUpdate, sections, channelGap, worthinessReason};
+  }
+
   function knowledgeActionPlanBlocks(job, auditText = "") {
     const actions = reviewKnowledgeActions(job, auditText);
     if (!actions.length) return {summary:"", blocks:[]};
@@ -8857,34 +9928,62 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     const secondary = cleanText(job?.secondaryKnowledgeAction || extractField(auditText, "Secondary Knowledge Action"));
     const primaryReason = cleanHumanLearning(job?.primaryKnowledgeReason || extractFieldBlock(auditText, "Primary Knowledge Reason"), 2);
     const secondaryReason = cleanHumanLearning(job?.secondaryKnowledgeReason || extractFieldBlock(auditText, "Secondary Knowledge Reason"), 2);
+    const decision = knowledgeActionDecisionContext(job, auditText);
     const blocks = actions.map(action => {
       const label = knowledgeActionReasonLabel(action);
-      let reason = normalizeDecision(action) === normalizeDecision(primary) ? primaryReason
-        : normalizeDecision(action) === normalizeDecision(secondary) ? secondaryReason
-        : normalizeDecision(action) === "CREATE KCS" ? "A standalone KCS gives TAC an immediately usable support article while owner-controlled documentation, runbook, known-issue or release-note changes are reviewed and implemented."
+      const normalized = normalizeDecision(action);
+      let reason = normalized === normalizeDecision(primary) ? primaryReason
+        : normalized === normalizeDecision(secondary) ? secondaryReason
         : "";
-      if (normalizeDecision(action) === "UPDATE ADMIN/TECH GUIDE" && job?.adminTechGuideNeedReason) reason = cleanHumanLearning(job.adminTechGuideNeedReason, 2) || reason;
-      if (normalizeDecision(action) === "CREATE KCS" && /confluence|internal guide|internal knowledge|runbook/i.test(`${job?.priorReference || ""} ${job?.priorKnown || ""} ${job?.knowledgeChannelGap || ""}`)) {
-        const channelReason = "Relevant technical guidance already exists internally; the KCS makes the validated guidance directly searchable and reusable in Salesforce Knowledge and suitable for later externalization review.";
-        reason = reason ? `${reason} ${channelReason}` : channelReason;
-      }
+      if (normalized === "CREATE KCS") reason = decision.whyCreate || reason;
+      if (normalized === "UPDATE EXISTING KCS") reason = decision.whyUpdate || reason;
+      if (normalized === "UPDATE ADMIN/TECH GUIDE" && job?.adminTechGuideNeedReason) reason = cleanHumanLearning(job.adminTechGuideNeedReason, 2) || reason;
       reason = cleanText(reason || "")
         .replace(/diagnostic XQL queries?\s*\(`?[^)`]+`?\)/gi, "diagnostic checks")
         .replace(/API-driven tagging/gi, "currently supported tag-management mechanisms")
         .replace(/Sub-hour policy transitions require interactive user logoff\/logon or Endpoint Tagging\.?/gi, "A complete logoff/logon can reprioritize synchronization, but it does not guarantee a specific completion time or a sub-hour policy transition. Where deterministic faster policy switching is required, use Endpoint Tags.");
-      return {action, label, instruction:knowledgeActionInstruction(action, job), reason};
+      return {action, label, instruction:knowledgeActionInstruction(action, job), reason, decision};
     });
     return {summary:`TAC to ${actions.join(" + ")}.`, blocks};
   }
 
   function knowledgeActionPlanText(job, auditText = "") {
     const plan = knowledgeActionPlanBlocks(job, auditText);
-    if (!plan.summary) return "";
+    const primary = normalizeDecision(job?.knowledgeAction || extractField(auditText, "Primary Knowledge Action"));
+    const decision = knowledgeActionDecisionContext(job, auditText);
+    if (!plan.summary) {
+      if (primary === "NO KNOWLEDGE ACTION") {
+        const reason = decision.whyCreate || decision.worthinessReason || cleanHumanLearning(job?.knowledgeDecisionExplanation || extractFieldBlock(auditText, "Knowledge Decision Explanation"), 2);
+        const existing = decision.bestExisting ? ` Existing knowledge: ${decision.bestExisting}.` : "";
+        return limitHumanText(`No maintained knowledge change recommended.${existing}${reason ? ` Reason: ${reason}` : ""}`, 1800);
+      }
+      return "";
+    }
     const parts = [plan.summary];
     for (const block of plan.blocks) {
-      parts.push(`${block.label} action: ${block.instruction}${block.reason ? ` Why: ${block.reason}` : ""}`);
+      const normalized = normalizeDecision(block.action);
+      if (normalized === "CREATE KCS") {
+        const d = block.decision || decision;
+        const segments = ["KCS action: CREATE KCS."];
+        if (d.target) segments.push(`Target: ${d.target}${/[.!?]$/.test(d.target) ? "" : "."}`);
+        if (d.bestExisting) segments.push(`Closest existing knowledge: ${d.bestExisting}${/[.!?]$/.test(d.bestExisting) ? "" : "."}`);
+        if (d.covered) segments.push(`Existing coverage: ${d.covered}${/[.!?]$/.test(d.covered) ? "" : "."}`);
+        if (d.gap) segments.push(`Missing reusable gap: ${d.gap}${/[.!?]$/.test(d.gap) ? "" : "."}`);
+        if (block.reason) segments.push(`Why CREATE instead of UPDATE / no action: ${block.reason}`);
+        parts.push(segments.join(" "));
+      } else if (normalized === "UPDATE EXISTING KCS") {
+        const ctx = existingKcsActionContext(job, auditText);
+        const ref = ctx.ref || {};
+        const target = [ref.title, ref.articleId].filter(Boolean).join(" · ");
+        const d = block.decision || decision;
+        const coverageText = ctx.covered || d.covered || "";
+        const missingText = ctx.missing || d.gap || "";
+        parts.push(`${block.label} action: UPDATE EXISTING KCS.${target ? ` Existing KCS: ${target}.` : ""}${ref.link ? ` Link: ${ref.link}.` : ""}${coverageText ? ` Current coverage: ${coverageText}${/[.!?]$/.test(coverageText) ? "" : "."}` : ""}${missingText ? ` Update needed: ${missingText}${/[.!?]$/.test(missingText) ? "" : "."}` : ""}${d.sections ? ` Sections to update: ${d.sections}${/[.!?]$/.test(d.sections) ? "" : "."}` : ""}${block.reason ? ` Why UPDATE instead of CREATE: ${block.reason}` : ""}`);
+      } else {
+        parts.push(`${block.label} action: ${block.instruction}${block.reason ? ` Why: ${block.reason}` : ""}`);
+      }
     }
-    return limitHumanText(parts.join(" "), 1800);
+    return limitHumanText(parts.join(" "), 2600);
   }
 
   function limitHumanText(value, maxChars = 1000) {
@@ -8904,9 +10003,22 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     }
     return out || text;
   }
+  function humanFacingOperationalDetailNeedsValidation(value) {
+    const text = String(value || "");
+    if (!cleanText(text)) return false;
+    return /`[^`]{3,}`|\b(?:PowerShell|cmd\.exe|bash|shell|curl|cytool(?:\.exe)?|net\s+(?:start|stop)|sc\s+(?:start|stop|query)|Get-[A-Za-z0-9_-]+|Set-[A-Za-z0-9_-]+)\b|\bHK(?:LM|CU)\\|\bDWORD\b|\bdataset\s*=|\b(?:GET|POST|PUT|PATCH|DELETE)\s+\/|\/api\/|\b[A-Za-z]:\\(?:Program Files|Windows|Users)\\|\b(?:mark|classify)\b[^.!?]{0,100}\bfalse positive\b|\bupgrade\b[^.!?]{0,80}\b(?:version\s*)?\d+\.\d+(?:\.\d+)?\b/i.test(text);
+  }
+
+  function withHumanFacingOperationalValidationBoundary(value) {
+    const text = cleanText(value || "");
+    if (!text || !humanFacingOperationalDetailNeedsValidation(text)) return text;
+    if (/validate[^.!?]{0,120}(?:current|maintained|supported|syntax|scope)|current maintained guidance/i.test(text)) return text;
+    return `${text} Validate the exact operational detail, syntax and applicable product/version scope against current maintained guidance before authoritative reuse.`;
+  }
+
   function immediateOperationalGuidance(job) {
     const explicit = cleanHumanLearning(job?.immediateOperationalGuidance || "", 2);
-    if (explicit && !/^(none|none identified|not applicable)$/i.test(explicit)) return explicit;
+    if (explicit && !/^(none|none identified|not applicable)$/i.test(explicit)) return withHumanFacingOperationalValidationBoundary(explicit);
 
     const candidates = [
       job?.resolutionWhy,
@@ -8921,7 +10033,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     const actionPattern = /\b(log\s*off|logout|log\s*on|login|restart|reboot|upgrade|update|enable|disable|configure|reconfigure|exclude|allowlist|switch|use endpoint tags|endpoint tags|reorder|move .* final|install|remove|assign|reauthoriz|authorize|verify .* license|change .* license|manual fetch|debug-mode|procmon|codeintegrity|wait up to|prioriti[sz]e|resync)\b/i;
     for (const candidate of candidates) {
       const sentence = candidate.split(/(?<=[.!?])\s+|\n+/).map(cleanText).find(x => actionPattern.test(x));
-      if (sentence) return sentence;
+      if (sentence) return withHumanFacingOperationalValidationBoundary(sentence);
     }
     return "";
   }
@@ -8935,7 +10047,8 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     if (guidance && !normalizeFieldValueForCompare(finding).includes(normalizeFieldValueForCompare(guidance))) {
       finding = cleanText(`${finding}${finding ? " " : ""}Practical next step: ${guidance}`);
     }
-    return limitHumanText(polishReviewCommentText(finding), 1350);
+    finding = withHumanFacingOperationalValidationBoundary(finding);
+    return limitHumanText(polishReviewCommentText(finding), 1550);
   }
 
   function smeAtGlanceFindingSummary(job) {
@@ -9038,7 +10151,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     const issue = polishReviewCommentText(smeReviewIssueSummary(job.reportedIssue || "", 2));
     const finding = smeAtGlanceFindingSummary(job);
     const fieldBits = humanDecisionFields(job).map(f => `<div class="xa-sme-field-card xa-sme-good"><div class="xa-sme-field-head"><strong>Correct ${escapeHtml(f.name)}</strong></div><div class="xa-correct-value"><strong>${escapeHtml(f.correct)}</strong></div>${humanFacingWhy(f.why)?`<div class="xa-sme-why"><b>Why:</b> ${escapeHtml(polishReviewCommentText(humanFacingWhy(f.why)))}</div>`:""}</div>`).join("");
-    const action = knowledgeActionPlanText(job) || cleanHumanLearning(job.tacActionItem || "", 2);
+    const action = sanitizeHumanFacingInternalMechanics(knowledgeActionPlanText(job) || cleanHumanLearning(job.tacActionItem || "", 2));
     const primary = cleanText(job.knowledgeAction || "");
     const secondary = cleanText(job.secondaryKnowledgeAction || "");
     const actions = reviewKnowledgeActions(job);
@@ -9080,8 +10193,11 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     const actions=reviewKnowledgeActions(job);
     const availability=cleanText(job?.knowledgeAvailability||"").toUpperCase();
     const avoid=cleanText(job?.xsupAvoidable||"").toUpperCase();
+    const accessAssessment=cleanText(job?.backendToolAccessAssessment||"").toUpperCase();
     if(actions.includes("UPDATE EXISTING KCS") || actions.includes("UPDATE ADMIN/TECH GUIDE")) return "KNOWLEDGE QUALITY / MAINTENANCE";
     if(actions.includes("CREATE KCS") && /EXISTS INTERNALLY|PARTIAL/.test(availability)) return "KNOWLEDGE DISCOVERABILITY / DISTRIBUTION";
+    if(/SUPPORT TOOL AVAILABLE|SUPPORT TOOL \/ WORKFLOW GAP/.test(accessAssessment)) return "TAC WORKFLOW / ENABLEMENT";
+    if(/ENGINEERING DEPENDENCY|CAPABILITY GAP/.test(accessAssessment)) return "ENGINEERING DEPENDENCY";
     if(actions.includes("CREATE/UPDATE RUNBOOK") || /^(YES|PARTIAL)$/.test(avoid)) return "TAC WORKFLOW / ENABLEMENT";
     if(actions.includes("KNOWN ISSUE/RELEASE NOTE")) return "PRODUCT GAP";
     if(avoid === "NO" && cleanHumanLearning(job?.engineeringContribution||job?.engineeringBoundary||"",2)) return "ENGINEERING DEPENDENCY";
@@ -9098,6 +10214,11 @@ ${KNOWLEDGE_FINAL_DELIMITER}
   function caseManagementAction(job) {
     const explicit=polishReviewCommentText(cleanHumanLearning(job?.managementUseAction||"",3));
     if(explicit) return explicit;
+    const accessAssessment=cleanText(job?.backendToolAccessAssessment||"").toUpperCase();
+    if(accessAssessment === "SUPPORT TOOL AVAILABLE") return "Standardize use of the identified Support-accessible diagnostic in the relevant TAC workflow so future cases can obtain the same evidence before escalating.";
+    if(accessAssessment === "SUPPORT TOOL / WORKFLOW GAP") return "Close the identified tool/workflow discoverability, documentation, training or access-process gap and make the authorized Support diagnostic path part of standard triage.";
+    if(accessAssessment === "CAPABILITY GAP") return "Evaluate whether an authorized Support diagnostic capability should be created for this evidence need instead of expanding privileged backend access; preserve the Engineering escalation boundary until a safe supported capability exists.";
+    if(accessAssessment === "ENGINEERING DEPENDENCY") return "Preserve the Engineering/backend escalation boundary and make the required escalation evidence explicit so TAC can recognize when the case has genuinely reached that boundary.";
     const actions=reviewKnowledgeActions(job);
     if(actions.includes("UPDATE EXISTING KCS")) return "Close the identified gap in the existing KCS, validate the updated claims against current sources, and use future similar escalations to see whether the corrected knowledge is being found and applied.";
     if(actions.includes("CREATE KCS")) return "Package the validated case learning into searchable Salesforce Knowledge so TAC can discover and reuse it before a similar escalation.";
@@ -9142,6 +10263,20 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     if (!eng) eng = "UNCLEAR — the available retrospective evidence does not separately describe what Engineering uniquely added.";
     rows.push(`<div class="xa-analysis-block"><strong>What Engineering added</strong><p>${escapeHtml(eng)}</p></div>`);
 
+    const accessAssessment = cleanText(job.backendToolAccessAssessment || "").toUpperCase();
+    const accessEvidence = polishReviewCommentText(cleanHumanLearning(job.backendToolAccessEvidence || "", 4));
+    const supportAlternative = polishReviewCommentText(cleanHumanLearning(job.supportAccessibleAlternative || "", 4));
+    const toolGap = polishReviewCommentText(cleanHumanLearning(job.toolWorkflowGap || "", 4));
+    const accessRelevant = (accessAssessment && accessAssessment !== "NOT APPLICABLE") || accessEvidence || (supportAlternative && !/^(?:none identified|not applicable)$/i.test(supportAlternative)) || (toolGap && !/^(?:none identified|not applicable)$/i.test(toolGap));
+    if (accessRelevant) {
+      const accessBits = [];
+      if (accessAssessment) accessBits.push(`<b>Assessment:</b> ${escapeHtml(accessAssessment)}.`);
+      if (accessEvidence) accessBits.push(`<b>Evidence:</b> ${renderRetrospectiveLinkedText(accessEvidence, job.references || [])}`);
+      if (supportAlternative && !/^(?:none identified|not applicable)$/i.test(supportAlternative)) accessBits.push(`<b>Support-accessible alternative:</b> ${renderRetrospectiveLinkedText(supportAlternative, job.references || [])}`);
+      if (toolGap && !/^(?:none identified|not applicable)$/i.test(toolGap)) accessBits.push(`<b>Tool / workflow gap:</b> ${renderRetrospectiveLinkedText(toolGap, job.references || [])}`);
+      rows.push(`<div class="xa-analysis-block"><strong>Backend / Support tool access review</strong><p>${accessBits.join(" ")}</p></div>`);
+    }
+
     reconcileRetrospectiveKnowledgeState(job);
     const priorStatus = cleanText(job.priorMatchStatus || "").toUpperCase() || "UNDETERMINED";
     const priorRef = cleanHumanLearning(job.priorReference || job.existingKcsCandidate || "", 2);
@@ -9159,7 +10294,9 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     if (!priorRef && !priorKnown && priorStatus === "UNDETERMINED") bits.push("Available evidence did not establish a reliable prior-ticket or knowledge match.");
     const refHtml = priorRef && !/none identified/i.test(priorRef) ? `<div><b>Best reference:</b> ${renderRetrospectiveLinkedText(priorRef, job.references || [])}</div>` : "";
     const gapHtml = channelGap ? `<div><b>Knowledge channel gap:</b> ${renderRetrospectiveLinkedText(channelGap, job.references || [])}</div>` : "";
-    rows.push(`<div class="xa-analysis-block"><strong>Existing knowledge / prior-ticket check</strong><p>${bits.join(" ")}</p>${refHtml}${gapHtml}</div>`);
+    const coverage = cleanHumanLearning(job.knowledgeSourceCoverage || "", 4);
+    const coverageHtml = coverage ? `<div><b>Source coverage:</b> ${escapeHtml(coverage)}</div>` : "";
+    rows.push(`<div class="xa-analysis-block"><strong>Existing knowledge / prior-ticket check</strong><p>${bits.join(" ")}</p>${refHtml}${gapHtml}${coverageHtml}</div>`);
 
     const priorUseRaw = cleanText(job.priorKnowledgeUseStatus || "").toUpperCase();
     const priorUse = /^(YES|NO|UNCLEAR)$/.test(priorUseRaw) ? priorUseRaw : "UNCLEAR";
@@ -9183,6 +10320,9 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     const managementLearning = caseManagementLearning(job);
     const managementAction = caseManagementAction(job);
     rows.push(`<div class="xa-analysis-block xa-management-learning"><strong>Management learning from this XSUP</strong><p><b>Signal:</b> ${escapeHtml(managementSignal)}</p><p><b>What this case teaches:</b> ${escapeHtml(managementLearning)}</p><p><b>How to use the learning:</b> ${escapeHtml(managementAction)}</p><p class="small">Case-specific management signal from this one XSUP; it is not an aggregate trend or performance score.</p></div>`);
+
+    const learningOutcome = cleanText(job.tacLearningOutcome || "");
+    if (learningOutcome) rows.push(`<div class="xa-analysis-block"><strong>TAC learning outcome</strong><p>${escapeHtml(learningOutcome)}</p></div>`);
 
     let improvement = polishReviewCommentText(cleanHumanLearning(job.retrospectiveImprovement || job.tacActionItem || "", 3));
     if (!improvement) improvement = "No additional retrospective improvement was established from the available evidence.";
@@ -9264,7 +10404,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         <p>${escapeHtml(icon)} ${escapeHtml(status)}${result.followupId ? ` · Case Chat #${escapeHtml(String(result.followupId))}` : ""}${result.readiness ? ` · ${escapeHtml(result.readiness)}` : ""}${escapeHtml(deliveryText)}</p>
         ${result.reuseReason ? `<p class="small">${escapeHtml(result.reuseReason)}</p>` : ""}
         ${result.error ? `<div class="xa-knowledge-error">${escapeHtml(result.error)}</div>` : ""}
-        ${result.status === "completed" && result.answer ? `<div class="xa-actions"><button data-xa-k-download="${index}">Download ${escapeHtml(result.label || knowledgeArtifactLabel(result.type))}</button><button data-xa-k-copy="${index}">Copy</button></div>` : ""}
+        ${(result.status === "completed" && result.answer) || result.draftPrompt ? `<div class="xa-actions">${result.status === "completed" && result.answer ? `<button data-xa-k-download="${index}">Download ${escapeHtml(result.label || knowledgeArtifactLabel(result.type))}</button><button data-xa-k-copy="${index}">Copy</button>` : ""}${result.draftPrompt ? `<button data-xa-k-prompt="${index}" title="Copies the exact fully materialized Knowledge generation prompt used for this artifact.">Copy ${result.type === "KCS_DRAFT" || result.type === "KCS_UPDATE" ? "KCS" : "Knowledge"} Prompt</button>` : ""}</div>` : ""}
       </div>`;
     }).join("") : requests.map(req => `<div class="xa-analysis-block"><strong>${escapeHtml(knowledgeRoleLabel(req.role))} · ${escapeHtml(knowledgeArtifactLabel(req.type))}</strong><p>${job.knowledgeStatus === "queued" ? "Queued" : job.knowledgeStatus === "generating" ? "Pending / generating" : "Not generated yet"}</p></div>`).join("");
 
@@ -9283,6 +10423,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         ${(completedKcsUpdate || completedReviewerNewKcs) ? `<div class="xa-analysis-block"><strong>Existing Knowledge Decision</strong><p>${completedReviewerNewKcs ? "Update Existing KCS remains the default recommendation because substantial overlap was identified. The current output is a separate NEW KCS created by reviewer choice, and the related existing KCS is retained in the new draft." : "Substantial existing Salesforce KCS overlap was identified. Recommended path: UPDATE EXISTING KCS. You can still deliberately create a separate NEW KCS; the new draft will reference the related existing KCS and require duplication/conflict review before publication."}</p>${job.existingKcsCandidate ? `<p class="small"><b>Existing / related KCS:</b> ${escapeHtml(job.existingKcsCandidate)}</p>` : ""}</div>` : ""}
         ${previewAnswer ? `<div class="xa-knowledge-preview">${safeMarkdownToHtml(stripInternalKnowledgeMetadata(previewAnswer))}</div>` : ""}
         <div class="xa-actions">
+          <button id="xsup-auditor-copy-kcs-prompt" ${currentKcsCopyPrompt(job) ? "" : "disabled"} title="${escapeHtml(kcsPromptAvailability(job).reason || "Copies the exact fully materialized KCS generation prompt used by the automatic path.")}">Copy KCS Prompt</button>
           ${canChooseSeparateNewKcs ? `<button id="xsup-auditor-create-new-kcs-anyway">Create New KCS Anyway</button>` : ""}
           ${canReturnToRecommendedUpdate ? `<button id="xsup-auditor-use-recommended-kcs-update">Use Recommended Update Existing KCS</button>` : ""}
           ${canRetry ? `<button id="xsup-auditor-retry-knowledge">Regenerate all recommended Knowledge</button>` : ""}
@@ -9312,6 +10453,22 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       };
     });
 
+    box.querySelectorAll("[data-xa-k-prompt]").forEach(button => {
+      button.onclick = async () => {
+        const result = artifacts[Number(button.dataset.xaKPrompt)];
+        if (!result?.draftPrompt) return;
+        await copyWithFeedback(button, result.draftPrompt);
+        setStatus(`${job.xsup} ${result.type === "KCS_DRAFT" || result.type === "KCS_UPDATE" ? "KCS" : "Knowledge"} generation prompt copied.`, "ok");
+      };
+    });
+
+    document.getElementById("xsup-auditor-copy-kcs-prompt")?.addEventListener("click", async (event) => {
+      const prompt = currentKcsCopyPrompt(job);
+      if (!prompt) return;
+      await copyWithFeedback(event.currentTarget, prompt);
+      setStatus(`${job.xsup} KCS generation prompt copied.`, "ok");
+    });
+
     document.getElementById("xsup-auditor-create-new-kcs-anyway")?.addEventListener("click", () => queueReviewerKcsChoice(job, "CREATE_NEW_ANYWAY"));
     document.getElementById("xsup-auditor-use-recommended-kcs-update")?.addEventListener("click", () => queueReviewerKcsChoice(job, "USE_RECOMMENDED_UPDATE"));
 
@@ -9322,6 +10479,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       job.knowledgeAutoSaved = false;
       job.knowledgeAutoDeliveryAttempted = false;
       job.knowledgeArtifacts = [];
+      job.knowledgeDraftPrompt = "";
       queueKnowledgeArtifact(job, {force:true});
     };
   }
@@ -9339,6 +10497,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     job.knowledgeAutoSaved = false;
     job.knowledgeStatus = "queued";
     job.knowledgeArtifacts = [];
+    job.knowledgeDraftPrompt = "";
     job.knowledgeArtifactType = "KCS_DRAFT";
     job.knowledgeArtifactRequests = [{role:"primary", action:"CREATE KCS", type:"KCS_DRAFT", readiness:effectiveReadiness}];
 
@@ -9426,6 +10585,13 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     const debugBtn = document.getElementById("xsup-auditor-debug");
     if (debugBtn) debugBtn.disabled = !(job.evidence && job.report);
 
+    const auditPromptBtn = document.getElementById("xsup-auditor-copy-audit-prompt");
+    if (auditPromptBtn) {
+      const availability = auditPromptAvailability(job);
+      auditPromptBtn.disabled = !availability.enabled;
+      auditPromptBtn.title = availability.reason || "Copies the exact fully materialized Audit prompt used by the automatic path.";
+    }
+
     const downloadBtn = document.getElementById("xsup-auditor-download-selected");
     if (downloadBtn) downloadBtn.disabled = !job.auditAnswer;
   }
@@ -9437,6 +10603,9 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     state.selectedXsup = xsup;
     renderJobList();
     renderSelectedJob();
+    if (job.status === "staged" && !["loading","waiting_taco","ready"].includes(String(job.promptPrepStatus || ""))) {
+      void prepareStagedPromptContext(job);
+    }
   }
 
   function actualXsup(jobOrValue) {
@@ -9482,8 +10651,8 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       sourceXsup: options.sourceXsup || actualXsup(xsup),
       sourceSfdc: options.sourceSfdc || "",
       linkedXsup: actualXsup(xsup),
-      status: "queued",
-      stageLabel: "Queued",
+      status: options.stageOnly ? "staged" : "queued",
+      stageLabel: options.stageOnly ? "Ready to run" : "Queued",
       steps: {
         resolve: "Waiting",
         taco: "Waiting",
@@ -9515,6 +10684,23 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         tacopilot: ""
       },
       lastPrompt: "",
+      stagedKcsPrompt: "",
+      stagedKcsPromptType: "",
+      promptPrepStatus: options.stageOnly ? "pending" : "not_started",
+      promptPrepReason: options.stageOnly ? "Open this XSUP to prepare/copy the exact manual prompt, or click Run Selected to continue automatically." : "",
+      promptPrepError: "",
+      promptPrepToken: 0,
+      preflightAuditReuseFound: false,
+      preflightAuditReuseReason: "",
+      preflightAuditReuseFollowupId: null,
+      preflightAuditReuseAnswer: "",
+      preflightAuditFingerprint: "",
+      preflightKnowledgeReuseFound: false,
+      preflightKnowledgeReuseReason: "",
+      preflightKnowledgeReuseFollowupId: null,
+      preflightKnowledgeReuseAnswer: "",
+      preflightKnowledgeReuseKind: "",
+      preflightKnowledgeFingerprint: "",
       verdict: "",
 
       // Review-decision fields
@@ -9567,6 +10753,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       knowledgeProgress: "",
       knowledgeLastHeartbeatAt: null,
       knowledgePrompt: "",
+      knowledgeDraftPrompt: "",
       knowledgeAnswer: "",
       knowledgeRawAnswer: "",
       knowledgeDraftAnswer: "",
@@ -9622,12 +10809,23 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       existingKcsRecommendationSummary: "",
       manualAuditOnly: false,
       directKnowledgeOnly: false,
+      workflowLockedToKcs: false,
+      auditOnlyRun: false,
+
+      // v1 preflight/dashboard execution plan. These values are UI intent only;
+      // the proven worker/transport pipeline remains unchanged after queueing.
+      dashboardSelected: options.dashboardSelected !== false,
+      executionPlan: options.executionPlan || (state.autoGenerateKnowledge ? "audit_knowledge" : "audit_only"),
+      regenerationPlan: options.regenerationPlan || "reuse",
+      reanalyzeTaco: Boolean(options.reanalyzeTaco),
+      tacLearningOutcome: "",
+      knowledgeSourceCoverage: "",
 
       error: "",
       overallProgress: 0,
       tacoProgress: null,
       tacoNode: "",
-      currentActivity: "Queued",
+      currentActivity: options.stageOnly ? "Ready to run" : "Queued",
       lastHeartbeatAt: null,
       lastProgressChangeAt: null,
       startedAt: null,
@@ -9658,8 +10856,12 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     const added=[];
     for(const spec of specs){
       const key=spec.xsup || `SFDC-${spec.sfdc}`;
-      const existing=state.jobs.get(key); if(existing&&["queued","running","needs_selection","needs_sfdc","needs_product"].includes(existing.status)) continue;
-      const job=createJob(key,{sourceXsup:spec.xsup,sourceSfdc:spec.sfdc});
+      const existing=state.jobs.get(key); if(existing&&["staged","queued","running","needs_selection","needs_sfdc","needs_product"].includes(existing.status)) continue;
+      const job=createJob(key,{
+        sourceXsup:spec.xsup,sourceSfdc:spec.sfdc,
+        stageOnly:Boolean(options.stageOnly),
+        executionPlan:options.executionPlan || (options.directKnowledgeOnly ? "kcs_only" : (state.autoGenerateKnowledge ? "audit_knowledge" : "audit_only"))
+      });
       if(spec.sfdc){
         job.caseNumber=spec.sfdc;
         job.selectedCandidate={case_number:spec.sfdc,xsup:spec.xsup||"",text:"SFDC supplied directly by reviewer",details:spec.xsup?"Paired XSUP/SFDC supplied directly":"SFDC-only input; linked XSUP will be discovered from TACopilot evidence if possible",sfdc_url:""};
@@ -9667,11 +10869,576 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         job.steps.resolve=`Provided SFDC ${spec.sfdc}${spec.xsup?"":" · linked XSUP discovery pending"}`;
       }
       job.directKnowledgeOnly=Boolean(options.directKnowledgeOnly);
-      state.jobs.set(key,job);state.queue.push(key);added.push(job);
+      job.workflowLockedToKcs=Boolean(options.directKnowledgeOnly);
+      if (job.directKnowledgeOnly) job.executionPlan = "kcs_only";
+      state.jobs.set(key,job);
+      if (!options.stageOnly) state.queue.push(key);
+      added.push(job);
     }
     if(input) input.value="";
     state.viewMode="dashboard";state.selectedXsup="";renderJobList();renderDashboard();renderSelectedJob();
     return added;
+  }
+
+
+  function workflowPlanLabel(plan) {
+    return ({audit_knowledge:"Audit + Knowledge",audit_only:"Audit only",kcs_only:"KCS only",skip:"Skip"})[plan] || "Audit + Knowledge";
+  }
+
+  function regenerationPlanLabel(plan) {
+    return ({reuse:"Automatic — reuse valid results",fresh_audit:"Regenerate Audit",fresh_knowledge:"Regenerate Knowledge",fresh_all:"Regenerate Audit + Knowledge"})[plan] || "Automatic — reuse valid results";
+  }
+
+  function generationPlanLabelForJob(job) {
+    const plan = job?.executionPlan || "audit_knowledge";
+    if (job?.reanalyzeTaco) {
+      if (plan === "kcs_only" || job?.directKnowledgeOnly) return "Regenerate TACO Analysis + KCS";
+      if (plan === "audit_only") return "Regenerate TACO Analysis + Audit";
+      return "Regenerate TACO Analysis + Audit + Knowledge";
+    }
+    if (plan === "kcs_only" || job?.directKnowledgeOnly) {
+      return job?.regenerationPlan === "reuse" ? "Automatic — reuse valid KCS" : "Regenerate KCS";
+    }
+    if (plan === "audit_only") {
+      return job?.regenerationPlan === "reuse" ? "Automatic — reuse valid Audit" : "Regenerate Audit";
+    }
+    return regenerationPlanLabel(job?.regenerationPlan);
+  }
+
+  function generationChoiceValue(job) {
+    if (job?.reanalyzeTaco) return "fresh_taco";
+    const plan = job?.executionPlan || "audit_knowledge";
+    const refresh = job?.regenerationPlan || "reuse";
+    if (plan === "kcs_only" || job?.directKnowledgeOnly) return refresh === "reuse" ? "reuse" : "fresh_knowledge";
+    if (plan === "audit_only") return refresh === "reuse" ? "reuse" : "fresh_audit";
+    return ["reuse","fresh_audit","fresh_knowledge","fresh_all"].includes(refresh) ? refresh : "reuse";
+  }
+
+  function generationChoicesForJob(job) {
+    const plan = job?.executionPlan || "audit_knowledge";
+    const kcsOnly = plan === "kcs_only" || job?.directKnowledgeOnly;
+    if (kcsOnly) return [
+      {value:"reuse", label:"Automatic — reuse valid KCS", tip:"Automatic KCS flow: reuse a usable TACO report/source evidence and compatible KCS only while they remain valid for current case evidence. If newer Jira/SFDC evidence exists, stale KCS is not reused. TACO itself is regenerated only if no usable TACO analysis exists or you explicitly choose Regenerate TACO Analysis + KCS."},
+      {value:"fresh_knowledge", label:"Regenerate KCS", tip:"Keep current available TACO/source evidence and generate a fresh KCS. Audit is not run."},
+      {value:"fresh_taco", label:"Regenerate TACO Analysis + KCS", tip:"Run a fresh TACO analysis first, then generate a fresh KCS. Audit is not run."}
+    ];
+    if (plan === "audit_only") return [
+      {value:"reuse", label:"Automatic — reuse valid Audit", tip:"Automatic Audit flow: reuse a usable TACO report and Audit only while they remain valid for current case evidence. If newer Jira/SFDC evidence exists, a stale Audit is not reused. TACO itself is regenerated only if no usable TACO analysis exists or you explicitly choose Regenerate TACO Analysis + Audit."},
+      {value:"fresh_audit", label:"Regenerate Audit", tip:"Keep the current valid TACO analysis and generate a fresh Audit."},
+      {value:"fresh_taco", label:"Regenerate TACO Analysis + Audit", tip:"Run a fresh TACO analysis first, then generate a fresh Audit. Knowledge generation remains disabled for this row."}
+    ];
+    return [
+      {value:"reuse", label:"Automatic — reuse valid results", tip:"Automatic flow: reuse a usable/current TACO analysis; reuse Audit only when it is valid for the latest case evidence; reuse Knowledge only when it is valid for the applicable Audit/evidence. Newer Jira/SFDC evidence prevents stale Audit/Knowledge reuse. Missing or stale downstream stages are generated as needed. TACO is regenerated only if no usable analysis exists or you explicitly choose Regenerate TACO Analysis + Audit + Knowledge."},
+      {value:"fresh_audit", label:"Regenerate Audit", tip:"Keep the current valid TACO analysis and generate a fresh Audit. Downstream Knowledge follows the resulting Audit decision."},
+      {value:"fresh_knowledge", label:"Regenerate Knowledge", tip:"Keep the current valid Audit and generate fresh Audit-selected Knowledge output."},
+      {value:"fresh_all", label:"Regenerate Audit + Knowledge", tip:"Keep the current valid TACO analysis and regenerate both the Audit and its downstream Knowledge output."},
+      {value:"fresh_taco", label:"Regenerate TACO Analysis + Audit + Knowledge", tip:"Run a fresh TACO analysis first, then generate a fresh Audit and fresh downstream Knowledge output."}
+    ];
+  }
+
+  function applyGenerationChoice(job, value) {
+    if (!job) return;
+    const plan = job.executionPlan || "audit_knowledge";
+    job.reanalyzeTaco = value === "fresh_taco";
+    if (value === "fresh_taco") {
+      job.regenerationPlan = (plan === "kcs_only" || job.directKnowledgeOnly)
+        ? "fresh_knowledge"
+        : plan === "audit_only" ? "fresh_audit" : "fresh_all";
+      return;
+    }
+    job.regenerationPlan = value || "reuse";
+  }
+
+  function normalizeGenerationForWorkflow(job) {
+    if (!job) return;
+    const current = generationChoiceValue(job);
+    const allowed = generationChoicesForJob(job).some(choice => choice.value === current);
+    if (!allowed) applyGenerationChoice(job, "reuse");
+  }
+
+  function workflowControlHtml(job) {
+    const lockedKcs = Boolean(job?.workflowLockedToKcs && job?.executionPlan === "kcs_only");
+    if (lockedKcs) {
+      return `<span class="xa-readonly-choice" data-tooltip="This job was loaded with Load as KCS Only, so the workflow is locked to the dedicated KCS path. Audit is not run." tabindex="0">KCS only</span>`;
+    }
+    const disabled = job?.status === "staged" ? "" : "disabled";
+    return `<select class="xa-job-plan" data-xsup="${escapeHtml(job?.xsup || "")}" ${disabled} data-tooltip="Choose what this XSUP should run. Audit + Knowledge runs the retrospective and Audit-selected Knowledge. Audit only stops after the Audit. KCS only uses the dedicated KCS workflow and does not run the retrospective Audit.">
+      <option value="audit_knowledge" ${job?.executionPlan === "audit_knowledge" ? "selected" : ""}>Audit + Knowledge</option>
+      <option value="audit_only" ${job?.executionPlan === "audit_only" ? "selected" : ""}>Audit only</option>
+      <option value="kcs_only" ${job?.executionPlan === "kcs_only" ? "selected" : ""}>KCS only</option>
+    </select>`;
+  }
+
+  function generationControlHtml(job) {
+    const current = generationChoiceValue(job);
+    const choices = generationChoicesForJob(job);
+    const selected = choices.find(choice => choice.value === current) || choices[0];
+    const disabled = job?.status === "staged" ? "" : "disabled";
+    return `<select class="xa-job-refresh" data-xsup="${escapeHtml(job?.xsup || "")}" ${disabled} data-tooltip="${escapeHtml(selected?.tip || "Choose Automatic mode to reuse only valid results, or force selected stages to regenerate.")}">
+      ${choices.map(choice => `<option value="${escapeHtml(choice.value)}" ${choice.value === current ? "selected" : ""}>${escapeHtml(choice.label)}</option>`).join("")}
+    </select>`;
+  }
+
+  function dashboardHeading(label, tooltip) {
+    return `${escapeHtml(label)}<span class="xa-help-dot" data-tooltip="${escapeHtml(tooltip)}" tabindex="0" role="button" aria-label="Help: ${escapeHtml(label)}">?</span>`;
+  }
+
+  function jobKnowledgeEnabled(job) {
+    if (!job) return false;
+    if (job.directKnowledgeOnly || job.executionPlan === "kcs_only") return true;
+    if (job.auditOnlyRun || job.executionPlan === "audit_only" || job.executionPlan === "skip") return false;
+    if (job.executionPlan === "audit_knowledge") return true;
+    return state.autoGenerateKnowledge;
+  }
+
+  function configureJobForPreflightRun(job) {
+    cancelStagedPromptAutoPoll(job);
+    const plan = job.executionPlan || "audit_knowledge";
+    const refresh = job.regenerationPlan || "reuse";
+    job.directKnowledgeOnly = plan === "kcs_only";
+    job.auditOnlyRun = plan === "audit_only";
+    job.manualAuditOnly = false;
+    job.forceAuditRefresh = !job.directKnowledgeOnly && (refresh === "fresh_audit" || refresh === "fresh_all");
+    job.forceKnowledgeRefresh = job.directKnowledgeOnly
+      ? (refresh === "fresh_knowledge" || refresh === "fresh_all")
+      : jobKnowledgeEnabled(job) && (refresh === "fresh_knowledge" || refresh === "fresh_all");
+    job.forceTacoRefresh = Boolean(job.reanalyzeTaco);
+    job.status = "queued";
+    job.stageLabel = "Queued";
+    job.currentActivity = "Queued";
+    job.error = "";
+    job.startedAt = null;
+    job.endedAt = null;
+    job.overallProgress = 0;
+    job.tacoProgress = null;
+    job.tacoNode = "";
+    job.steps = {resolve:"Waiting",taco:"Waiting",evidence:"Waiting",audit:job.directKnowledgeOnly ? "Skipped — Direct KCS" : "Waiting"};
+    job.knowledgeStatus = "not_evaluated";
+    job.knowledgeProgress = "";
+    job.knowledgeError = "";
+  }
+
+  function kcsPromptRequestForJob(job) {
+    const requests = job?.knowledgeArtifactRequests?.length
+      ? job.knowledgeArtifactRequests
+      : knowledgeArtifactRequests(job);
+    return requests.find(request => request.type === "KCS_DRAFT" || request.type === "KCS_UPDATE") || null;
+  }
+
+  async function materializeStagedKcsPrompt(job, {scanHistory = true, prepToken = null} = {}) {
+    if (!job) return;
+    const prepStillCurrent = () => prepToken === null || stagedPromptPrepIsCurrent(job, prepToken);
+    if (!prepStillCurrent()) return;
+    job.stagedKcsPrompt = "";
+    job.stagedKcsPromptType = "";
+    job.preflightKnowledgeReuseFound = false;
+    job.preflightKnowledgeReuseReason = "";
+    job.preflightKnowledgeReuseFollowupId = null;
+    job.preflightKnowledgeReuseAnswer = "";
+    job.preflightKnowledgeReuseKind = "";
+    job.preflightKnowledgeFingerprint = "";
+
+    if (!job.caseNumber || !job.investigationId || !job.report || !job.evidence || !job.productKey || !reportReady(job.report)) {
+      return;
+    }
+
+    if (job.directKnowledgeOnly && !job.auditAnswer) {
+      prepareDirectKcsFromCurrentTaco(job);
+    }
+
+    if (!job.directKnowledgeOnly && !job.auditAnswer) return;
+
+    job.knowledgeArtifactRequests = knowledgeArtifactRequests(job);
+    const request = kcsPromptRequestForJob(job);
+    if (!request) return;
+
+    const child = makeKnowledgeArtifactContext(job, request);
+    const draftMeta = buildKnowledgeDraftReuseMeta(child);
+    const draftPrompt = appendReuseMarker(buildKnowledgePrompt(child), draftMeta);
+    job.stagedKcsPrompt = draftPrompt;
+    job.stagedKcsPromptType = request.type;
+
+    if (!scanHistory) return;
+
+    const finalMeta = buildKnowledgeReuseMeta(child);
+    let reusable = await inspectReusableCaseChatNoWait({
+      job:child,
+      type:"knowledge",
+      currentMeta:finalMeta,
+      legacyQuestion:""
+    });
+    if (!prepStillCurrent()) return;
+    let reusableKind = reusable.reused ? "knowledge" : "";
+    let reusableFingerprint = reusable.reused ? finalMeta.fingerprint : "";
+    if (!reusable.reused) {
+      const draftReuse = await inspectReusableCaseChatNoWait({
+        job:child,
+        type:"knowledge_draft",
+        currentMeta:draftMeta,
+        legacyQuestion:buildKnowledgePrompt(child)
+      });
+      if (!prepStillCurrent()) return;
+      if (draftReuse.reused) {
+        reusable = draftReuse;
+        reusableKind = "knowledge_draft";
+        reusableFingerprint = draftMeta.fingerprint;
+      } else if (!reusable.reason) reusable = draftReuse;
+    }
+
+    job.preflightKnowledgeReuseFound = Boolean(reusable.reused);
+    job.preflightKnowledgeReuseReason = reusable.reason || "";
+    job.preflightKnowledgeReuseFollowupId = reusable.followupId || reusable.previousFollowupId || null;
+    job.preflightKnowledgeReuseAnswer = reusable.reused ? String(reusable.answer || "") : "";
+    job.preflightKnowledgeReuseKind = reusableKind;
+    job.preflightKnowledgeFingerprint = reusableFingerprint;
+  }
+
+  function cancelStagedPromptAutoPoll(job) {
+    if (!job) return;
+    const timer = state.stagedPromptPollTimers.get(job);
+    if (timer) clearTimeout(timer);
+    state.stagedPromptPollTimers.delete(job);
+  }
+
+  function clearAllStagedPromptAutoPolls() {
+    for (const timer of state.stagedPromptPollTimers.values()) {
+      try { clearTimeout(timer); } catch (_) {}
+    }
+    state.stagedPromptPollTimers.clear();
+  }
+
+  function stagedPromptPrepIsCurrent(job, token) {
+    return Boolean(
+      job &&
+      job.status === "staged" &&
+      state.jobs.get(job.xsup) === job &&
+      Number(job.promptPrepToken || 0) === Number(token)
+    );
+  }
+
+  function scheduleStagedPromptAutoPoll(job, freshnessReason = "") {
+    if (!job || job.status !== "staged") return;
+    if (state.stagedPromptPollTimers.has(job)) return;
+
+    const intervalMs = Math.max(5000, Number(state.stagedPromptPollIntervalMs) || 10000);
+    const seconds = Math.round(intervalMs / 1000);
+    const detail = cleanText(freshnessReason || "");
+    job.promptPrepStatus = "waiting_taco";
+    job.promptPrepReason = `Waiting for existing TACO report · auto-checking every ${seconds}s.${detail ? ` ${detail}` : ""}`;
+
+    const timer = setTimeout(() => {
+      state.stagedPromptPollTimers.delete(job);
+      if (job.status !== "staged") return;
+      if (state.jobs.get(job.xsup) !== job) return;
+      if (!document.getElementById("xsup-auditor-panel")) return;
+      void prepareStagedPromptContext(job, {autoPoll:true});
+    }, intervalMs);
+    state.stagedPromptPollTimers.set(job, timer);
+  }
+
+  async function prepareStagedPromptContext(job, {autoPoll = false} = {}) {
+    if (!job || job.status !== "staged") {
+      cancelStagedPromptAutoPoll(job);
+      return;
+    }
+    if (job.promptPrepStatus === "loading") return;
+
+    const prepToken = Number(job.promptPrepToken || 0) + 1;
+    job.promptPrepToken = prepToken;
+
+    // Any explicit/manual preflight refresh supersedes a previously scheduled
+    // TACO-state recheck. The auto-poll callback removes its own timer before
+    // entering here, so this is also safe for scheduled rechecks.
+    cancelStagedPromptAutoPoll(job);
+
+    job.promptPrepStatus = "loading";
+    job.promptPrepError = "";
+    job.promptPrepReason = autoPoll
+      ? "Rechecking the existing TACO report for Copy Prompt availability (read-only)."
+      : "Preparing read-only SFDC, evidence, TACO and Case Chat reuse context.";
+    state.dashboardRenderSignature = "";
+    renderDashboard();
+
+    try {
+      if (!job.caseNumber) {
+        if (!/^XSUP-\d+$/i.test(String(job.xsup || ""))) {
+          job.promptPrepStatus = "blocked";
+          job.promptPrepReason = "SFDC case is required before an exact Case Chat prompt can be materialized.";
+          return;
+        }
+        const candidates = await resolveXSUPCandidates(job.xsup);
+        if (!stagedPromptPrepIsCurrent(job, prepToken)) return;
+        job.sfdcCandidates = candidates;
+        if (candidates.length !== 1) {
+          job.promptNeedsSfdcSelection = candidates.length > 1;
+          job.promptNeedsSfdcEntry = candidates.length === 0;
+          job.promptPrepStatus = "blocked";
+          job.promptPrepReason = candidates.length > 1
+            ? `Multiple linked SFDC cases were found (${candidates.length}); choose the target case before copying a prompt.`
+            : "No linked SFDC case was resolved during read-only preflight; enter the 8-digit SFDC case before copying a prompt.";
+          return;
+        }
+        job.promptNeedsSfdcSelection = false;
+        job.promptNeedsSfdcEntry = false;
+        const mapping = candidates[0];
+        job.caseNumber = mapping.case_number;
+        job.selectedCandidate = mapping;
+        job.targetLinks = {
+          jira:`https://jira-dc.paloaltonetworks.com/browse/${job.xsup}`,
+          sfdc:mapping.sfdc_url || "",
+          tacopilot:`${location.origin}/taco/case/${job.caseNumber}`
+        };
+      }
+
+      if (!job.evidence) {
+        const collectedEvidence = await collectCaseEvidence(job.caseNumber, actualXsup(job));
+        if (!stagedPromptPrepIsCurrent(job, prepToken)) return;
+        job.evidence = collectedEvidence;
+        if (!actualXsup(job)) {
+          const linked = discoverLinkedXsup(job.evidence);
+          if (linked) adoptLinkedXsup(job, linked);
+        }
+        job.latestCaseEvidenceAt = job.evidence?.latest_evidence_timestamp_ms ?? latestEvidenceTimestamp(job.evidence);
+        job.targetLinks = {
+          ...job.targetLinks,
+          ...(job.evidence?.links || {}),
+          sfdc:job.evidence?.links?.sfdc || job.selectedCandidate?.sfdc_url || job.targetLinks?.sfdc || ""
+        };
+      }
+
+      const invs = await getInvestigations(job.caseNumber);
+      if (!stagedPromptPrepIsCurrent(job, prepToken)) return;
+      const latest = latestInvestigation(invs);
+      if (!latest) {
+        job.promptPrepStatus = "blocked";
+        job.promptPrepReason = "No existing TACO investigation was found. Run Selected must create TACO before an exact Audit/KCS prompt exists.";
+        return;
+      }
+
+      job.investigationId = latest.id || latest.investigation_id;
+      job.targetLinks = {...job.targetLinks, tacopilot:`${location.origin}/taco/case/${job.caseNumber}`};
+
+      if (!job.productKey || job.productSelectionSource !== "manual") {
+        const detected = detectProduct({evidence:job.evidence, candidate:job.selectedCandidate, latestInvestigation:latest});
+        job.productSuggestedKey = detected.key || "";
+        job.productDetectionScores = detected.scores;
+        job.productDetectionReason = detected.reason;
+        job.productConfidence = detected.confidence || "LOW";
+        if (detected.key && !detected.ambiguous && detected.confidence === "HIGH") {
+          job.productKey = detected.key;
+          job.productSelectionSource = "auto";
+        } else if (!job.productKey) {
+          job.promptPrepStatus = "blocked";
+          job.promptPrepReason = detected.key
+            ? `Product confirmation is required before the exact prompt can be materialized (suggested ${productLabel(detected.key)}).`
+            : "Product could not be determined during read-only preflight; select the product before copying a prompt.";
+          return;
+        }
+      }
+
+      if (job.reanalyzeTaco) {
+        job.promptPrepStatus = "blocked";
+        job.promptPrepReason = "Run Mode requests a fresh TACO analysis. The exact downstream prompt is available only after that refresh completes.";
+        return;
+      }
+
+      let existingProgress = {};
+      let existingReport = {};
+      try { existingProgress = await getProgress(job.caseNumber, job.investigationId); } catch (_) {}
+      if (!stagedPromptPrepIsCurrent(job, prepToken)) return;
+      try { existingReport = await getReport(job.caseNumber, job.investigationId); } catch (_) {}
+      if (!stagedPromptPrepIsCurrent(job, prepToken)) return;
+
+      const freshness = determineTacoFreshness({
+        latest,
+        progress:existingProgress,
+        report:existingReport,
+        evidenceTimestamp:job.latestCaseEvidenceAt,
+        forceRefresh:false
+      });
+      job.tacoAnalysisAt = freshness.tacoTimestamp || timestampFromObject(existingReport, existingProgress, latest) || null;
+
+      if (freshness.action === "wait") {
+        scheduleStagedPromptAutoPoll(job, freshness.reason);
+        return;
+      }
+
+      if (!reportReady(existingReport)) {
+        job.promptPrepStatus = "blocked";
+        job.promptPrepReason = "No usable completed TACO report is available. Run Selected will create/refresh TACO before the exact downstream prompt exists.";
+        return;
+      }
+
+      job.report = existingReport;
+      job.selectedEvidence = selectEvidence(job.evidence, job.report);
+      job.tacoDecision = freshness.newerEvidence ? "REUSED · NEWER EVIDENCE" : "REUSED";
+      job.tacoDecisionReason = freshness.reason || "Existing usable TACO report retained for read-only prompt preparation.";
+
+      if (job.directKnowledgeOnly || job.executionPlan === "kcs_only") {
+        job.directKnowledgeOnly = true;
+        prepareDirectKcsFromCurrentTaco(job);
+        await materializeStagedKcsPrompt(job, {scanHistory:true, prepToken});
+        if (!stagedPromptPrepIsCurrent(job, prepToken)) return;
+        job.promptPrepStatus = "ready";
+        job.promptPrepReason = job.preflightKnowledgeReuseFound
+          ? job.preflightKnowledgeReuseReason
+          : "Exact KCS prompt is ready from the existing TACO/evidence context.";
+        return;
+      }
+
+      const basePrompt = buildAuditPrompt({job, report:job.report, selected:job.selectedEvidence, evidence:job.evidence});
+      const auditMeta = buildAuditReuseMeta(job, job.selectedEvidence);
+      job.auditFingerprint = auditMeta.fingerprint;
+      job.lastPrompt = appendReuseMarker(basePrompt, auditMeta);
+
+      const auditReuse = await inspectReusableCaseChatNoWait({
+        job,
+        type:"audit",
+        currentMeta:auditMeta,
+        legacyQuestion:basePrompt
+      });
+      if (!stagedPromptPrepIsCurrent(job, prepToken)) return;
+      job.preflightAuditReuseFound = Boolean(auditReuse.reused);
+      job.preflightAuditReuseReason = auditReuse.reason || "";
+      job.preflightAuditReuseFollowupId = auditReuse.followupId || auditReuse.previousFollowupId || null;
+      job.preflightAuditReuseAnswer = auditReuse.reused ? String(auditReuse.answer || "") : "";
+      job.preflightAuditFingerprint = auditReuse.reused ? auditMeta.fingerprint : "";
+
+      if (auditReuse.reused) {
+        applyAuditResult(job, auditReuse.answer);
+        job.auditReuseStatus = "reused";
+        job.auditReuseReason = auditReuse.reason;
+        job.auditFollowupId = auditReuse.followupId;
+        job.auditCompletedAt = auditReuse.completedAt || Date.now();
+        job.references = extractReferences(job.report, job.evidence, job.selectedEvidence);
+        await materializeStagedKcsPrompt(job, {scanHistory:true, prepToken});
+        if (!stagedPromptPrepIsCurrent(job, prepToken)) return;
+      }
+
+      job.promptPrepStatus = "ready";
+      job.promptPrepReason = auditReuse.reused
+        ? auditReuse.reason
+        : `Exact Audit prompt is ready. ${auditReuse.reason || "No reusable Audit was found."}`;
+    } catch (err) {
+      if (stagedPromptPrepIsCurrent(job, prepToken)) {
+        job.promptPrepStatus = "error";
+        job.promptPrepError = cleanText(err?.message || String(err || ""));
+        job.promptPrepReason = `Read-only prompt preparation failed: ${job.promptPrepError}`;
+      }
+    } finally {
+      if (Number(job?.promptPrepToken || 0) === Number(prepToken)) {
+        state.dashboardRenderSignature = "";
+        state.jobListRenderSignature = "";
+        renderJobList();
+        renderDashboard();
+        if (state.selectedXsup === job.xsup) renderSelectedJob();
+      }
+    }
+  }
+
+  async function prepareLoadedPromptContexts(jobs) {
+    const queue = (jobs || []).filter(job => job?.status === "staged");
+    if (!queue.length) return;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < queue.length) {
+        const index = cursor++;
+        await prepareStagedPromptContext(queue[index]);
+      }
+    };
+    await Promise.allSettled(Array.from({length:Math.min(2, queue.length)}, () => worker()));
+  }
+
+  async function refreshStagedPromptMaterialization(job) {
+    if (!job || job.status !== "staged") return;
+    if (job.executionPlan === "kcs_only") {
+      job.directKnowledgeOnly = true;
+    } else {
+      job.directKnowledgeOnly = false;
+      if (/^# Direct KCS Evidence Basis/m.test(job.auditAnswer || "")) {
+        job.auditAnswer = "";
+        job.auditFingerprint = "";
+        job.auditReuseStatus = "not_checked";
+        job.auditReuseReason = "";
+        job.auditFollowupId = null;
+        job.auditCompletedAt = null;
+        job.knowledgeAction = "";
+        job.secondaryKnowledgeAction = "";
+        job.artifactReadiness = "";
+        job.knowledgeArtifactRequests = [];
+        job.reviewedFields = "";
+        job.retrospectiveEligibility = "";
+      }
+    }
+    if (job.caseNumber && job.investigationId && job.report && job.evidence && job.productKey && reportReady(job.report)) {
+      if (job.executionPlan === "kcs_only") {
+        if (!job.auditAnswer || !/^# Direct KCS Evidence Basis/m.test(job.auditAnswer || "")) prepareDirectKcsFromCurrentTaco(job);
+        await materializeStagedKcsPrompt(job, {scanHistory:true});
+      } else if (job.auditAnswer) {
+        await materializeStagedKcsPrompt(job, {scanHistory:true});
+      } else {
+        job.stagedKcsPrompt = "";
+        job.stagedKcsPromptType = "";
+      }
+      state.dashboardRenderSignature = "";
+      renderDashboard();
+    } else if (job.promptPrepStatus !== "loading") {
+      void prepareStagedPromptContext(job);
+    }
+  }
+
+  async function loadJobsFromInput(options = {}) {
+    if (state.stopped && !state.activeCount && !state.knowledgeActiveCount) {
+      state.stopped = false;
+      state.controller = new AbortController();
+    }
+    if (state.running || state.activeCount || state.knowledgeActiveCount) {
+      setStatus("Wait for the current run to finish before loading another preflight batch.", "error");
+      return;
+    }
+    const plan = options.executionPlan || (state.autoGenerateKnowledge ? "audit_knowledge" : "audit_only");
+    const added = await addJobsFromInput({stageOnly:true, executionPlan:plan, directKnowledgeOnly:plan === "kcs_only"});
+    if (!added.length) return;
+    state.dashboardRenderSignature = "";
+    state.jobListRenderSignature = "";
+    showDashboard();
+    setStatus(`${added.length} XSUP${added.length===1?"":"s"} loaded. Choose Workflow and Run Mode, then click Run Selected. To copy an exact manual prompt, open that XSUP's detail view.`, "ok");
+  }
+
+  function runSelectedJobs() {
+    if (state.stopped && state.activeCount > 0) {
+      setStatus("Finishing Stop All; wait a moment before starting a new batch.", "error");
+      return;
+    }
+    if (state.stopped && state.activeCount === 0) { state.stopped = false; state.controller = new AbortController(); }
+    const selected = [...state.jobs.values()].filter(job => job.status === "staged" && job.dashboardSelected && job.executionPlan !== "skip");
+    if (!selected.length) {
+      setStatus("Select at least one loaded XSUP before clicking Run Selected.", "error");
+      return;
+    }
+    ensureBatchRuntime();
+    for (const job of selected) {
+      job.promptPrepToken = Number(job.promptPrepToken || 0) + 1;
+      cancelStagedPromptAutoPoll(job);
+      job.promptPrepStatus = "runtime";
+      job.promptPrepReason = "Run started; runtime freshness and Case Chat reuse checks are authoritative.";
+      configureJobForPreflightRun(job);
+      job.batchRunId = state.batchRunId;
+      if (!state.queue.includes(job.xsup)) state.queue.push(job.xsup);
+    }
+    state.dashboardRenderSignature = "";
+    state.jobListRenderSignature = "";
+    renderJobList(); renderDashboard(); updateBatchStatus(); pumpQueue();
+  }
+
+  function updateStagedJobs(mutator) {
+    let changed = 0;
+    for (const job of state.jobs.values()) {
+      if (job.status !== "staged") continue;
+      if (mutator(job) !== false) changed++;
+    }
+    if (changed) { state.dashboardRenderSignature = ""; state.jobListRenderSignature = ""; renderJobList(); renderDashboard(); }
+    return changed;
   }
 
   function ensureBatchRuntime() {
@@ -9870,9 +11637,18 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         });
 
         job.tacoDecision = freshness.action.toUpperCase();
+        const newerEvidenceCount = freshness.newerEvidence && Number.isFinite(Number(freshness.tacoTimestamp))
+          ? (job.evidence?.records || []).filter(record => Number(record?.timestamp_ms) > Number(freshness.tacoTimestamp)).length
+          : 0;
+        job.newerEvidenceAfterTacoCount = newerEvidenceCount;
+        if (freshness.action === "reuse" && freshness.newerEvidence) {
+          job.tacoDecision = "REUSED · NEWER EVIDENCE";
+        }
         job.tacoDecisionReason = job.forceTacoRefresh && Number(job.tacoRecoveryRetries || 0) > 0
           ? `Automatic TACO recovery retry ${job.tacoRecoveryRetries}/${TACO_RECOVERY_RETRY_LIMIT}; forcing a fresh analysis before Audit/Knowledge.`
-          : freshness.reason;
+          : freshness.newerEvidence
+            ? `${freshness.reason}${newerEvidenceCount ? ` ${newerEvidenceCount} newer Jira/SFDC evidence item${newerEvidenceCount === 1 ? "" : "s"} detected.` : ""}`
+            : freshness.reason;
         job.tacoAnalysisAt = freshness.tacoTimestamp;
 
         if (freshness.action === "wait") {
@@ -9885,12 +11661,15 @@ ${KNOWLEDGE_FINAL_DELIMITER}
 
           const waitingBaselineReportCount = getReportCount(existingProgress);
           const waitingBaselineReportMarker = reportMarker(existingReport);
+          const waitingRequiresRevision = Boolean(
+            freshness.requireReportRevision && waitingBaselineReportMarker
+          );
           const waitedProgress = await waitForAnalysis(
             job.caseNumber,
             job.investigationId,
             {
-              requireFresh: Boolean(waitingBaselineReportMarker),
-              requireReportRevision: Boolean(waitingBaselineReportMarker),
+              requireFresh: waitingRequiresRevision,
+              requireReportRevision: waitingRequiresRevision,
               baselineReportCount: waitingBaselineReportCount,
               baselineReportMarker: waitingBaselineReportMarker,
               baselineInvestigationId: job.investigationId
@@ -9917,7 +11696,9 @@ ${KNOWLEDGE_FINAL_DELIMITER}
             {
               tacoProgress: 100,
               tacoNode: "",
-              activity: "TACO reused · no newer Jira/SFDC evidence"
+              activity: freshness.newerEvidence
+                ? `TACO reused · ⚠ newer Jira/SFDC evidence detected${newerEvidenceCount ? ` (${newerEvidenceCount})` : ""}`
+                : "TACO reused · no newer Jira/SFDC evidence"
             }
           );
         } else {
@@ -10060,14 +11841,25 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       if (job.xsup === state.selectedXsup) renderSelectedJob();
       setJobStep(job, "audit", "Checking for reusable Audit Case Chat...", "Case Chat reuse");
 
-      const reuse = await tryReuseCaseChat({
-        job,
-        type: "audit",
-        currentMeta: auditMeta,
-        legacyQuestion: basePrompt,
-        force: Boolean(job.forceAuditRefresh),
-        onProgress: value => setJobStep(job, "audit", value, "Case Chat reuse")
-      });
+      const reuse = !job.forceAuditRefresh &&
+        job.preflightAuditReuseFound &&
+        job.preflightAuditReuseAnswer &&
+        job.preflightAuditFingerprint === auditMeta.fingerprint
+        ? {
+            reused:true,
+            answer:job.preflightAuditReuseAnswer,
+            followupId:job.preflightAuditReuseFollowupId,
+            completedAt:job.auditCompletedAt || Date.now(),
+            reason:`Reused the source-current Audit Case Chat #${job.preflightAuditReuseFollowupId || "?"} confirmed during Load; the current fingerprint is unchanged.`
+          }
+        : await tryReuseCaseChat({
+            job,
+            type: "audit",
+            currentMeta: auditMeta,
+            legacyQuestion: basePrompt,
+            force: Boolean(job.forceAuditRefresh),
+            onProgress: value => setJobStep(job, "audit", value, "Case Chat reuse")
+          });
 
       let rawAuditAnswer = "";
       if (reuse.reused) {
@@ -10094,16 +11886,22 @@ ${KNOWLEDGE_FINAL_DELIMITER}
           job.investigationId,
           prompt,
           (value, meta) => setJobStep(job, "audit", value, "Case Chat", meta),
-          "Audit Case Chat"
+          "Audit Case Chat",
+          { forceFresh: Boolean(job.forceAuditRefresh) }
         );
         job.auditFollowupId = generated.followupId;
         rawAuditAnswer = generated.answer;
 
-        job.auditReuseStatus = job.forceAuditRefresh ? "regenerated" : "generated";
-        job.auditReuseReason = job.forceAuditRefresh
-          ? "Manual audit rerun requested; a new Case Chat result was generated."
-          : reuse.reason;
-        job.auditCompletedAt = Date.now();
+        if (generated?.recovered_from_exact_prompt) {
+          job.auditReuseStatus = "reused";
+          job.auditReuseReason = `Reused completed exact Audit prompt from Case Chat #${generated.followupId}; no duplicate follow-up was created.`;
+        } else {
+          job.auditReuseStatus = job.forceAuditRefresh ? "regenerated" : "generated";
+          job.auditReuseReason = job.forceAuditRefresh
+            ? "Manual audit rerun requested; a new Case Chat result was generated."
+            : reuse.reason;
+        }
+        job.auditCompletedAt = generated?.completedAt || Date.now();
       }
 
       job.forceAuditRefresh = false;
@@ -10118,7 +11916,8 @@ ${KNOWLEDGE_FINAL_DELIMITER}
           job.investigationId,
           retryPrompt,
           (value, meta) => setJobStep(job, "audit", value, "Case Chat retry", meta),
-          "Audit Case Chat retry"
+          "Audit Case Chat retry",
+          { forceFresh: true }
         );
         job.auditFollowupId = retried.followupId;
         rawAuditAnswer = retried.answer;
@@ -10162,16 +11961,18 @@ ${KNOWLEDGE_FINAL_DELIMITER}
 
       // Only after the Audit save barrier may its validated knowledge verdict drive
       // downstream generation. No hidden companion artifact is added here.
-      if (!job.manualAuditOnly) {
+      if (!job.manualAuditOnly && jobKnowledgeEnabled(job)) {
         queueKnowledgeArtifact(job, {silent:true, deferPump:true});
-      } else if (job.knowledgeAnswer || job.knowledgeFollowupId) {
+      } else if (job.manualAuditOnly && (job.knowledgeAnswer || job.knowledgeFollowupId)) {
         job.knowledgeStatus = "outdated";
         job.knowledgeReuseStatus = "outdated";
         job.knowledgeReuseReason = "Audit was regenerated independently. Existing knowledge was not automatically regenerated; use Regenerate Knowledge if a new artifact is required.";
       } else {
-        job.knowledgeStatus = "not_evaluated";
+        job.knowledgeStatus = job.auditOnlyRun ? "not_generated" : "not_evaluated";
         job.knowledgeReuseStatus = "not_checked";
-        job.knowledgeReuseReason = "Audit was regenerated independently. Knowledge was not generated automatically.";
+        job.knowledgeReuseReason = job.auditOnlyRun
+          ? "Audit-only workflow selected in preflight. Knowledge generation was intentionally disabled for this XSUP."
+          : "Audit was regenerated independently. Knowledge was not generated automatically.";
       }
 
       job.status = "completed";
@@ -10275,14 +12076,14 @@ ${KNOWLEDGE_FINAL_DELIMITER}
   function auditRequiresKnowledgeArtifact(job) {
     if (!job) return false;
     if (job.directKnowledgeOnly) return true;
-    if (job.manualAuditOnly || !state.autoGenerateKnowledge || !job.auditAnswer) return false;
+    if (job.manualAuditOnly || job.auditOnlyRun || !jobKnowledgeEnabled(job) || !job.auditAnswer) return false;
     const actions = [job.knowledgeAction, job.secondaryKnowledgeAction].map(normalizeDecision).filter(Boolean);
     return actions.some(action => !["NONE", "NO KNOWLEDGE ACTION", "NOT APPLICABLE", "N/A", "UNDETERMINED"].includes(action));
   }
 
   function shouldGenerateKnowledge(job) {
     if (!job) return false;
-    if (!job.directKnowledgeOnly && !state.autoGenerateKnowledge) return false;
+    if (!job.directKnowledgeOnly && !jobKnowledgeEnabled(job)) return false;
     if (!job.directKnowledgeOnly && !job.auditAnswer) return false;
     // Primary and secondary knowledge recommendations are independent artifacts.
     // A completed Admin Guide must not silently satisfy a recommended KCS, and vice versa.
@@ -10434,6 +12235,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       validatedArtifactReadiness: "",
       knowledgeRawAnswer: "",
       knowledgeAnswer: "",
+      knowledgeDraftPrompt: "",
       knowledgeDraftAnswer: "",
       knowledgeDraftFollowupId: null,
       knowledgeDraftCompletedAt: null,
@@ -10463,14 +12265,26 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       job.knowledgeReuseReason = `Checking existing ${label} Case Chats.`;
       update("checking existing Case Chat history");
 
-      const finalReuse = await tryReuseCaseChat({
-        job,
-        type: "knowledge",
-        currentMeta: meta,
-        legacyQuestion: "",
-        force: Boolean(parentJob.forceKnowledgeRefresh),
-        onProgress: update
-      });
+      const finalReuse = !parentJob.forceKnowledgeRefresh &&
+        parentJob.preflightKnowledgeReuseFound &&
+        parentJob.preflightKnowledgeReuseKind === "knowledge" &&
+        parentJob.preflightKnowledgeReuseAnswer &&
+        parentJob.preflightKnowledgeFingerprint === meta.fingerprint
+        ? {
+            reused:true,
+            answer:parentJob.preflightKnowledgeReuseAnswer,
+            followupId:parentJob.preflightKnowledgeReuseFollowupId,
+            completedAt:parentJob.knowledgeCompletedAt || Date.now(),
+            reason:`Reused the source-current Knowledge Case Chat #${parentJob.preflightKnowledgeReuseFollowupId || "?"} confirmed during Load; the current fingerprint is unchanged.`
+          }
+        : await tryReuseCaseChat({
+            job,
+            type: "knowledge",
+            currentMeta: meta,
+            legacyQuestion: "",
+            force: Boolean(parentJob.forceKnowledgeRefresh),
+            onProgress: update
+          });
 
       if (finalReuse.reused) {
         const parsed = parseKnowledgeQualityResponse(finalReuse.answer, job);
@@ -10512,16 +12326,39 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         // reuse paths cost-free and prevents prompt-rendering defects from
         // blocking an otherwise reusable KCS/Admin Guide/Runbook.
         const draftMeta = buildKnowledgeDraftReuseMeta(job);
+        if (request.type === "KCS_DRAFT" || request.type === "KCS_UPDATE") {
+          try {
+            const copyPrompt = appendReuseMarker(buildKnowledgePrompt(job), draftMeta);
+            parentJob.stagedKcsPrompt = copyPrompt;
+            parentJob.stagedKcsPromptType = request.type;
+            if (state.selectedXsup === parentJob.xsup) renderKnowledgeArtifact(parentJob);
+          } catch (_) {
+            // Copy Prompt is a non-blocking UX aid. Reuse paths must remain usable
+            // even if local prompt materialization itself encounters an issue.
+          }
+        }
         update("checking reusable enriched draft");
 
-        const draftReuse = await tryReuseCaseChat({
-          job,
-          type: "knowledge_draft",
-          currentMeta: draftMeta,
-          legacyQuestion: "",
-          force: Boolean(parentJob.forceKnowledgeRefresh),
-          onProgress: update
-        });
+        const draftReuse = !parentJob.forceKnowledgeRefresh &&
+          parentJob.preflightKnowledgeReuseFound &&
+          parentJob.preflightKnowledgeReuseKind === "knowledge_draft" &&
+          parentJob.preflightKnowledgeReuseAnswer &&
+          parentJob.preflightKnowledgeFingerprint === draftMeta.fingerprint
+          ? {
+              reused:true,
+              answer:parentJob.preflightKnowledgeReuseAnswer,
+              followupId:parentJob.preflightKnowledgeReuseFollowupId,
+              completedAt:parentJob.knowledgeDraftCompletedAt || Date.now(),
+              reason:`Reused the source-current Knowledge draft Case Chat #${parentJob.preflightKnowledgeReuseFollowupId || "?"} confirmed during Load; the current fingerprint is unchanged.`
+            }
+          : await tryReuseCaseChat({
+              job,
+              type: "knowledge_draft",
+              currentMeta: draftMeta,
+              legacyQuestion: "",
+              force: Boolean(parentJob.forceKnowledgeRefresh),
+              onProgress: update
+            });
 
         if (draftReuse.reused) {
           job.knowledgeDraftAnswer = stripInternalKnowledgeMetadata(draftReuse.answer);
@@ -10531,7 +12368,10 @@ ${KNOWLEDGE_FINAL_DELIMITER}
           update(`reused enriched draft #${job.knowledgeDraftFollowupId}`);
         } else {
           const basePrompt = buildKnowledgePrompt(job);
-          const draftPrompt = appendReuseMarker(basePrompt, draftMeta);
+          const draftPrompt = (request.type === "KCS_DRAFT" || request.type === "KCS_UPDATE") && parentJob.stagedKcsPrompt
+            ? parentJob.stagedKcsPrompt
+            : appendReuseMarker(basePrompt, draftMeta);
+          job.knowledgeDraftPrompt = draftPrompt;
           job.knowledgePrompt = draftPrompt;
           update(`generating enriched ${label}`);
           const draftGenerated = await runCaseChatPrompt(
@@ -10539,7 +12379,8 @@ ${KNOWLEDGE_FINAL_DELIMITER}
             job.investigationId,
             draftPrompt,
             update,
-            `${label} draft Case Chat`
+            `${label} draft Case Chat`,
+            { forceFresh: Boolean(parentJob.forceKnowledgeRefresh) }
           );
           job.knowledgeDraftFollowupId = draftGenerated.followupId;
           const draftRaw = draftGenerated.answer;
@@ -10570,7 +12411,8 @@ ${KNOWLEDGE_FINAL_DELIMITER}
           job.investigationId,
           qualityPrompt,
           update,
-          `${label} quality Case Chat`
+          `${label} quality Case Chat`,
+          { forceFresh: Boolean(parentJob.forceKnowledgeRefresh) }
         );
         job.knowledgeFollowupId = qualityGenerated.followupId;
         const qualityRaw = qualityGenerated.answer;
@@ -10587,7 +12429,8 @@ ${KNOWLEDGE_FINAL_DELIMITER}
               job.investigationId,
               repairPrompt,
               update,
-              `${label} repair Case Chat`
+              `${label} repair Case Chat`,
+              { forceFresh: Boolean(parentJob.forceKnowledgeRefresh) }
             );
             const repairRaw = repairGenerated.answer;
             const repaired = applyRouteValidationToParsed(parseKnowledgeQualityResponse(repairRaw, job), job, request);
@@ -10653,6 +12496,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         status: "completed",
         answer: job.knowledgeAnswer,
         rawAnswer: job.knowledgeRawAnswer,
+        draftPrompt: job.knowledgeDraftPrompt || "",
         followupId: job.knowledgeFollowupId,
         completedAt: job.knowledgeCompletedAt || job.knowledgeEndedAt,
         reuseStatus: job.knowledgeReuseStatus,
@@ -10707,6 +12551,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
           status: "completed",
           answer: usableDraft,
           rawAnswer: job.knowledgeRawAnswer || "",
+          draftPrompt: job.knowledgeDraftPrompt || "",
           followupId: job.knowledgeFollowupId || job.knowledgeDraftFollowupId,
           completedAt: job.knowledgeCompletedAt,
           reuseStatus: ["checking", "waiting_existing", "not_checked"].includes(String(job.knowledgeReuseStatus || "").toLowerCase()) ? (parentJob.forceKnowledgeRefresh ? "regenerated" : "generated") : (job.knowledgeReuseStatus || "generated"),
@@ -10729,6 +12574,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         label,
         status: "failed",
         answer: "",
+        draftPrompt: job.knowledgeDraftPrompt || "",
         followupId: job.knowledgeFollowupId || job.knowledgeDraftFollowupId || null,
         completedAt: Date.now(),
         reuseStatus: "failed",
@@ -11121,29 +12967,40 @@ ${KNOWLEDGE_FINAL_DELIMITER}
     try {
       setJobStep(job, "audit", "Retrying Case Chat...", "Retry Case Chat");
 
-      const submit = await postFollowup(
-        job.caseNumber,
-        job.investigationId,
-        job.lastPrompt
-      );
+      const exactManual = await findCompletedExactPromptInHistory(job.caseNumber, job.investigationId, job.lastPrompt);
+      let followupId;
+      let rawAuditAnswer;
+      if (exactManual) {
+        followupId = exactManual.followupId;
+        rawAuditAnswer = exactManual.answer;
+        job.auditReuseStatus = "reused";
+        job.auditReuseReason = `Reused completed exact Audit prompt from Case Chat #${followupId}; Retry Audit did not create a duplicate follow-up.`;
+        setJobStep(job, "audit", `♻ Reused exact Case Chat #${followupId}`, "Retry Case Chat");
+      } else {
+        const submit = await postFollowup(
+          job.caseNumber,
+          job.investigationId,
+          job.lastPrompt
+        );
 
-      const taskId = submit?.task_id;
-      if (!taskId) throw new Error("Case Chat did not return task_id.");
+        const taskId = submit?.task_id;
+        const directFollowupId = extractFollowupId(submit);
+        if (!directFollowupId && !taskId) throw new Error("Case Chat did not return task_id or followup_id.");
 
-      const directFollowupId = extractFollowupId(submit);
-      const followupId = directFollowupId || await waitForFollowupId(
-        job.caseNumber,
-        job.investigationId,
-        taskId,
-        job.lastPrompt,
-        (value, meta) => setJobStep(job, "audit", value, "Retry Case Chat", meta)
-      );
+        followupId = directFollowupId || await waitForFollowupId(
+          job.caseNumber,
+          job.investigationId,
+          taskId,
+          job.lastPrompt,
+          (value, meta) => setJobStep(job, "audit", value, "Retry Case Chat", meta)
+        );
 
-      const rawAuditAnswer = await waitForFollowup(
-        job.caseNumber,
-        followupId,
-        (value, meta) => setJobStep(job, "audit", value, "Retry Case Chat", meta)
-      );
+        rawAuditAnswer = await waitForFollowup(
+          job.caseNumber,
+          followupId,
+          (value, meta) => setJobStep(job, "audit", value, "Retry Case Chat", meta)
+        );
+      }
 
       const auditValidation = validateReusableAuditAnswer(rawAuditAnswer, job);
       if (!auditValidation.valid) {
@@ -11159,7 +13016,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
       renderSelectedJob();
 
       // Preserve the same Audit-first barrier used by the normal pipeline. A
-      // manual Case Chat retry may change the knowledge routing decision, so do
+      // a retried/reused Case Chat may change the knowledge routing decision, so do
       // not start any replacement Knowledge work until the regenerated Audit
       // artifact has been delivered/requested first.
       if (state.autoSaveCompleted) {
@@ -11177,6 +13034,7 @@ ${KNOWLEDGE_FINAL_DELIMITER}
         job.knowledgeStatus = "not_evaluated";
         job.knowledgeAnswer = "";
     job.knowledgeRawAnswer = "";
+    job.knowledgeDraftPrompt = "";
     job.knowledgeDraftAnswer = "";
     job.knowledgeDraftFollowupId = null;
     job.knowledgeDraftCompletedAt = null;
@@ -11243,6 +13101,7 @@ pre{background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px;w
 .pill.good{background:#ecfdf5;border-color:#a7f3d0;color:#065f46}.pill.warn{background:#fffbeb;border-color:#fde68a;color:#92400e}.pill.bad{background:#fef2f2;border-color:#fecaca;color:#991b1b}.pill.info{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
 .xa-sme-field-card{margin:10px 0;padding:13px 14px;border:1px solid #e5e7eb;border-left:6px solid #64748b;border-radius:12px;background:#fff}.xa-sme-good{border-left-color:#16a34a;background:#f0fdf4}.xa-sme-warn{border-left-color:#d97706;background:#fffbeb}.xa-sme-bad{border-left-color:#dc2626;background:#fef2f2}.xa-sme-info{border-left-color:#3b82f6;background:#eff6ff}.xa-sme-gray{border-left-color:#94a3b8;background:#f8fafc}.xa-sme-field-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.xa-sme-field-grid{display:grid;grid-template-columns:1fr;gap:9px;margin-top:10px}.xa-sme-field-grid>div{background:#fff;border:1px solid rgba(148,163,184,.32);border-radius:9px;padding:9px}.xa-sme-field-grid span,.xa-correct-value span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:800}.xa-sme-field-grid strong,.xa-correct-value strong{display:block;margin-top:4px;font-size:16px}.xa-correct-value{margin-top:10px;background:#fff;border:1px solid rgba(148,163,184,.32);border-radius:9px;padding:10px}.xa-sme-why,.xa-sme-action,.xa-sme-detail,.xa-sme-correction{margin-top:9px;font-size:12px;line-height:1.5}.xa-sme-correction{padding:8px 10px;border-radius:8px;background:#fff1f2;color:#9f1239}.xa-sme-detail{color:#475569}.xa-at-glance-box{margin:16px 0;padding:14px 16px;border:1px solid #bfdbfe;border-left:6px solid #3b82f6;border-radius:12px;background:#eff6ff}.xa-at-glance-title{font-size:12px;font-weight:850;text-transform:uppercase;letter-spacing:.04em;color:#1d4ed8;margin-bottom:5px}.xa-at-glance-text{font-size:14px;line-height:1.55;color:#1e3a5f}.xa-review-status-box{margin:14px 0 20px;padding:12px 14px;border-radius:11px;border:1px solid #fde68a;border-left:6px solid #d97706;background:#fffbeb}.xa-review-status-box.blocker{border-color:#fecaca;border-left-color:#dc2626;background:#fef2f2}.xa-review-status-title{font-size:12px;font-weight:850;color:#92400e}.xa-review-status-box.blocker .xa-review-status-title{color:#991b1b}.xa-validation-notice{margin:12px 0 18px;padding:13px 15px;border:1px solid #fde68a;border-left:7px solid #d97706;border-radius:11px;background:#fffbeb}.xa-validation-notice.blocker{border-color:#fecaca;border-left-color:#dc2626;background:#fef2f2}.xa-validation-notice-title{font-size:12px;font-weight:900;color:#92400e;letter-spacing:.02em}.xa-validation-notice.blocker .xa-validation-notice-title{color:#991b1b}.xa-validation-notice-text{margin-top:5px;font-size:12px;line-height:1.55;color:#4b5563}.xa-review-status-text{margin-top:4px;font-size:13px;line-height:1.5;color:#4b5563}.xa-review-highlight{border-radius:4px;padding:1px 3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;cursor:help}.xa-review-highlight.review{background:#fef3c7;box-shadow:0 0 0 1px #fcd34d inset}.xa-review-highlight.blocker{background:#fee2e2;box-shadow:0 0 0 1px #fca5a5 inset}.xa-review-ref.review{background:#fef3c7!important;border-color:#f59e0b!important;color:#92400e!important}.xa-review-ref.blocker{background:#fee2e2!important;border-color:#ef4444!important;color:#991b1b!important}.xa-inline-review-marker{display:inline-flex;align-items:center;margin-left:4px;padding:1px 5px;border-radius:999px;font-size:8px;font-weight:900;vertical-align:middle;border:1px solid currentColor}.xa-inline-review-marker.review{background:#fffbeb;color:#92400e}.xa-inline-review-marker.blocker{background:#fef2f2;color:#991b1b}.xa-inline-review-summary{margin:0 0 12px;padding:8px 10px;border:1px solid #fde68a;border-radius:8px;background:#fffbeb;font-size:10px;line-height:1.5}.xa-inline-review-summary strong{margin-right:7px;color:#92400e}.xa-review-source.review{background:#fffbeb}.xa-review-source.blocker{background:#fef2f2}.xa-inline-review-callout{margin:7px 0 12px;padding:8px 10px;border-radius:8px;border-left:4px solid #d97706;background:#fffbeb;font-size:11px;line-height:1.45;color:#78350f}.xa-inline-review-callout.blocker{border-left-color:#dc2626;background:#fef2f2;color:#7f1d1d}.xa-inline-review-callout{display:block}.xa-inline-review-line,.xa-inline-review-refs,.xa-inline-review-source{display:block;margin-top:5px}.xa-review-claim{padding:6px 8px;border-radius:6px;background:rgba(255,255,255,.7)}.xa-review-source-item{display:inline}.xa-review-source-type{color:#64748b;font-size:9px}.xa-source-state{display:inline-flex;margin:0 6px 4px 0;padding:2px 6px;border-radius:999px;font-size:9px;font-weight:900;border:1px solid currentColor}.xa-source-state.current{color:#065f46;background:#ecfdf5}.xa-source-state.review{color:#92400e;background:#fffbeb}.xa-source-state.blocker{color:#991b1b;background:#fef2f2}.xa-source-freshness.current{border-left-color:#16a34a;background:#f0fdf4;color:#065f46}.xa-source-freshness.blocker{border-left-color:#dc2626;background:#fef2f2;color:#7f1d1d}.xa-management-learning{border-left:5px solid #2563eb;background:#eff6ff}.xa-inline-review-badge{display:inline-flex;margin-right:7px;padding:2px 6px;border-radius:999px;background:#fff;border:1px solid currentColor;font-size:9px;font-weight:850}.xa-review-details-bottom{margin-top:28px}.xa-review-guide{margin:8px 0 14px;padding:12px 14px;border:1px solid #bfdbfe;border-left:6px solid #2563eb;border-radius:10px;background:#eff6ff;font-size:12px;line-height:1.55;color:#1e3a5f}.xa-review-guide strong{color:#1e40af}.xa-review-guide-row{margin-top:6px}.xa-review-guide .blocker-key{color:#991b1b;font-weight:850}.xa-review-guide .review-key{color:#92400e;font-weight:850}.xa-review-item-list{display:flex;flex-direction:column;gap:12px}.xa-review-item{padding:13px 14px;border:1px solid #fde68a;border-left:6px solid #d97706;border-radius:10px;background:#fffbeb;font-size:12px}.xa-review-item.blocker{border-color:#fecaca;border-left-color:#dc2626;background:#fef2f2}.xa-review-item-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:9px}.xa-review-item-grid{display:grid;grid-template-columns:1fr;gap:8px}.xa-review-field{padding:9px 10px;background:rgba(255,255,255,.82);border:1px solid rgba(148,163,184,.3);border-radius:8px;line-height:1.5}.xa-review-field-label{display:block;margin-bottom:3px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;font-weight:900;color:#475569}.xa-review-item.blocker .xa-review-field-label{color:#7f1d1d}.xa-review-priority{display:inline-flex;padding:2px 7px;border-radius:999px;border:1px solid currentColor;font-size:9px;font-weight:900;white-space:nowrap}.xa-review-priority.review{color:#92400e;background:#fff}.xa-review-priority.blocker{color:#991b1b;background:#fff}.xa-ref-pill{display:inline-flex;margin:2px 3px 2px 0;padding:2px 6px;border:1px solid #cbd5e1;border-radius:999px;background:#fff;color:#334155;text-decoration:none;font-size:9px}.xa-inline-ref{display:inline-flex;align-items:center;padding:0 3px;margin:0 1px;border-radius:4px;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;font-weight:800;text-decoration:none;font-size:.86em}.xa-source-ref-entry{scroll-margin-top:24px}.xa-source-ref-entry:target{background:#eff6ff;box-shadow:0 0 0 2px #93c5fd inset;border-radius:8px}.xa-canonical-sources{margin:28px 0 8px;padding-top:4px}.xa-source-list{padding-left:22px}.xa-source-list li{margin:10px 0;padding:8px 10px}.xa-source-support,.xa-source-evidence,.xa-source-provenance,.xa-source-freshness{margin-top:5px;font-size:11px;line-height:1.45;color:#475569}.xa-source-provenance{font-weight:600;color:#334155}.xa-source-freshness{padding:6px 8px;border-left:3px solid #f59e0b;background:#fffbeb;border-radius:6px;color:#78350f}.xa-source-evidence{padding:6px 8px;border-left:3px solid #cbd5e1;background:#f8fafc;border-radius:6px}.xa-source-links{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px}.xa-source-open{display:inline-flex;padding:3px 7px;border:1px solid #bfdbfe;border-radius:7px;background:#eff6ff;color:#1d4ed8;text-decoration:none;font-size:10px;font-weight:750}.xa-ref-missing{color:#991b1b;border-color:#fecaca;background:#fef2f2}.xa-ref-help{margin:8px 0 14px;padding:8px 10px;border:1px solid #dbeafe;border-radius:8px;background:#f8fbff;color:#475569;font-size:11px}.xa-no-reference{font-size:10px;color:#92400e}.xa-semantic-chip{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:800;border:1px solid transparent}.xa-semantic-green{background:#dcfce7;color:#065f46;border-color:#86efac}.xa-semantic-amber{background:#fef3c7;color:#92400e;border-color:#fcd34d}.xa-semantic-red{background:#fee2e2;color:#991b1b;border-color:#fca5a5}
 .xa-analysis-block{margin:10px 0 14px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:9px;background:#fff}.xa-analysis-block>strong{display:block;margin-bottom:5px;color:#334155}.xa-analysis-block p{margin:0}.xa-analysis-block ul{margin:6px 0 0;padding-left:20px}.xa-analysis-block li{margin:4px 0}
+.xa-sme-validation-tools{margin:42px 0 4px;padding-top:12px;border-top:1px dashed #cbd5e1;color:#64748b;font-size:10px}.xa-sme-validation-title{font-size:10px;font-weight:850;letter-spacing:.04em;text-transform:uppercase;color:#475569}.xa-sme-validation-warning{margin-top:5px;max-width:900px;line-height:1.45}.xa-sme-validation-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.xa-sme-validation-btn{appearance:none;border:1px solid #cbd5e1;background:#f8fafc;color:#475569;border-radius:6px;padding:4px 7px;font:inherit;font-size:9px;font-weight:750;cursor:pointer}.xa-sme-validation-btn:hover{background:#f1f5f9;color:#334155}
 @media(max-width:760px){.xa-sme-field-head{align-items:flex-start;flex-direction:column}.xa-manual-sfdc-inline-row{grid-template-columns:1fr}.xa-manual-sfdc-inline-row button{width:100%}}
 </style>
 </head>
@@ -11254,11 +13113,35 @@ ${bodyHtml}
     if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(text);return;}
     const ta=document.createElement("textarea");ta.value=text;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.focus();ta.select();document.execCommand("copy");ta.remove();
   }
+  function cortexPayload(id){
+    const target=document.getElementById(id); if(!target)return "";
+    try{return decodeURIComponent(target.value||target.textContent||"");}catch(_){return target.value||target.textContent||"";}
+  }
+  function downloadText(name,text){
+    const blob=new Blob([text],{type:"text/markdown;charset=utf-8"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name||"KCS_Cortex_Brain_Validation.md";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+  }
   document.addEventListener("click",async function(e){
-    const btn=e.target.closest("[data-copy-review]"); if(!btn)return;
-    const target=document.getElementById(btn.getAttribute("data-copy-review")); if(!target)return;
-    const old=btn.textContent;
-    try{await copyText(target.innerText||target.textContent||"");btn.textContent="Copied";setTimeout(()=>btn.textContent=old,1400);}catch(err){btn.textContent="Copy failed";setTimeout(()=>btn.textContent=old,1800);}
+    const reviewBtn=e.target.closest("[data-copy-review]");
+    if(reviewBtn){
+      const target=document.getElementById(reviewBtn.getAttribute("data-copy-review")); if(!target)return;
+      const old=reviewBtn.textContent;
+      try{await copyText(target.innerText||target.textContent||"");reviewBtn.textContent="Copied";setTimeout(()=>reviewBtn.textContent=old,1400);}catch(err){reviewBtn.textContent="Copy failed";setTimeout(()=>reviewBtn.textContent=old,1800);}
+      return;
+    }
+    const copyBtn=e.target.closest("[data-xa-cortex-copy]");
+    if(copyBtn){
+      const text=cortexPayload(copyBtn.getAttribute("data-xa-cortex-copy")); if(!text)return;
+      const old=copyBtn.textContent;
+      try{await copyText(text);copyBtn.textContent="Copied";setTimeout(()=>copyBtn.textContent=old,1400);}catch(err){copyBtn.textContent="Copy failed";setTimeout(()=>copyBtn.textContent=old,1800);}
+      return;
+    }
+    const downloadBtn=e.target.closest("[data-xa-cortex-download]");
+    if(downloadBtn){
+      const text=cortexPayload(downloadBtn.getAttribute("data-xa-cortex-download")); if(!text)return;
+      const old=downloadBtn.textContent;
+      try{downloadText(downloadBtn.getAttribute("data-xa-cortex-filename")||"KCS_Cortex_Brain_Validation.md",text);downloadBtn.textContent="Downloaded";setTimeout(()=>downloadBtn.textContent=old,1400);}catch(err){downloadBtn.textContent="Download failed";setTimeout(()=>downloadBtn.textContent=old,1800);}
+    }
   });
 })();
 </script>
@@ -11276,7 +13159,7 @@ ${bodyHtml}
     const learning = tacLearningCardHtml(job);
     const knowledgeSummary = conciseKnowledgeSummary(job.knowledgeDecisionExplanation || "");
     const knowledge = /NO KNOWLEDGE ACTION|NOT APPLICABLE/i.test(job.knowledgeAction||"") ? "" : `<div class="xa-sme-field-card xa-sme-info"><div class="xa-sme-field-head"><strong>Knowledge Reuse</strong><span class="pill info">${escapeHtml(job.knowledgeAction||"—")}</span></div>${knowledgeSummary?`<div class="xa-sme-why">${escapeHtml(knowledgeSummary)}</div>`:""}</div>`;
-    return `<article class="ticket" id="${escapeHtml(job.xsup)}"><h1>${escapeHtml(jobDisplayKey(job))} Retrospective Audit</h1><div class="meta"><span class="pill info">Release: Initial Team Release</span><span class="pill info">Product: ${escapeHtml(productLabel(job))}</span>${job.caseNumber?`<span class="pill info">SFDC: ${escapeHtml(job.caseNumber)}</span>`:""}</div>${auditAtGlanceHtml(job)}<div class="section"><h2>Review Paste Comment</h2><div class="xa-copy-row"><button type="button" class="xa-copy-review" data-copy-review="xa-review-comment-${escapeHtml(job.xsup)}">Copy Review Comment</button></div><div class="comment" id="xa-review-comment-${escapeHtml(job.xsup)}">${escapeHtml(job.xsupComment||"Not available")}</div></div><details class="xa-details"><summary>XSUP retrospective review details</summary><div class="section">${tacAnalysisDetailsHtml(job)}</div></details>${refs?`<div class="section"><h2>References</h2><ol class="refs">${refs}</ol></div>`:""}</article>`;
+    return `<article class="ticket" id="${escapeHtml(job.xsup)}"><h1>${escapeHtml(jobDisplayKey(job))} Retrospective Audit</h1><div class="meta"><span class="pill info">Release: v1.0 · Initial Team Release</span><span class="pill info">Product: ${escapeHtml(productLabel(job))}</span>${job.caseNumber?`<span class="pill info">SFDC: ${escapeHtml(job.caseNumber)}</span>`:""}</div>${auditAtGlanceHtml(job)}<div class="section"><h2>Review Paste Comment</h2><div class="xa-copy-row"><button type="button" class="xa-copy-review" data-copy-review="xa-review-comment-${escapeHtml(job.xsup)}">Copy Review Comment</button></div><div class="comment" id="xa-review-comment-${escapeHtml(job.xsup)}">${renderRetrospectiveLinkedText(job.xsupComment||"Not available", job.references || [])}</div></div><details class="xa-details"><summary>XSUP retrospective review details</summary><div class="section">${tacAnalysisDetailsHtml(job)}</div></details>${refs?`<div class="section"><h2>References</h2><ol class="refs">${refs}</ol></div>`:""}</article>`;
   }
 
   async function downloadJobReport(job, { auto = false } = {}) {
@@ -11340,7 +13223,7 @@ ${bodyHtml}
   const REVIEW_KIND_VALUES = new Set([
     "UI_NAVIGATION","CLI_COMMAND","API_CONTRACT","TIMING_SLA","FILE_LOG_PATH",
     "SOURCE_CURRENTNESS","MISSING_SOURCE_OR_LINK","DERIVATIVE_AI_EVIDENCE",
-    "INTERNAL_ARCHITECTURE","DOCUMENTATION_PLACEMENT","CITATION_GAP","OTHER_MATERIAL_VALIDATION"
+    "INTERNAL_ARCHITECTURE","DOCUMENTATION_PLACEMENT","CITATION_GAP","PREVALENCE_GENERALIZATION","OTHER_MATERIAL_VALIDATION"
   ]);
 
   function inferReviewKindFromClaim(item) {
@@ -11349,6 +13232,7 @@ ${bodyHtml}
     if (/derivative evidence|generated\/synthesized|ai-assisted|case chat|tacopilot|\btaco\b/.test(core)) return "DERIVATIVE_AI_EVIDENCE";
     if (/authoritative \[r#\] citation|citation gap|attach the exact supporting|missing citation/.test(core)) return "CITATION_GAP";
     if (/source freshness|historical (?:source|case|evidence)|superseded|current applicability|still valid|originating case|support-case evidence|source age/.test(core)) return "SOURCE_CURRENTNESS";
+    if (/prevalence|frequency claim|most common|frequently|commonly|\boften\b|\busually\b/.test(core)) return "PREVALENCE_GENERALIZATION";
     if (/timing|latency|propagation|cadence|completion window|\bsla\b|\b\d+\s*(?:to|-|–)\s*\d+\s*(?:seconds?|minutes?|hours?|days?)|\b(?:within|up to|every|after|in)\s+(?:approximately\s+)?\d+\s*(?:seconds?|minutes?|hours?|days?)/.test(core)) return "TIMING_SLA";
     if (/\bcli\b|command syntax|debug command|powershell|cytool|playground|![a-z0-9_<>{}-]+/.test(core)) return "CLI_COMMAND";
     if (/public api|api\s+(?:route|request|endpoint|version|schema|payload|contract|call|method)|payload|request schema|response schema|\/api\//.test(core)) return "API_CONTRACT";
@@ -11387,6 +13271,7 @@ ${bodyHtml}
     if (kind === "CITATION_GAP") return "A material reusable claim needs an explicit supporting source mapping so reviewers do not have to infer which evidence supports it.";
     if (kind === "DERIVATIVE_AI_EVIDENCE") return "Generated/AI-assisted synthesis can help discover evidence but cannot become the sole authority for a reusable product claim.";
     if (kind === "SOURCE_CURRENTNESS") return "Historical or case-specific evidence can remain useful context, but current applicability must be confirmed before a material reusable technical claim is treated as authoritative.";
+    if (kind === "PREVALENCE_GENERALIZATION") return "Words such as ‘frequently’, ‘most common’, ‘usually’ or ‘often’ make a prevalence claim. A single case or a small evidence set cannot establish frequency; retain that wording only when current authoritative evidence explicitly supports it.";
     return cleanReviewDisplayText(item?.why || "This material claim requires validation before authoritative reuse.");
   }
 
@@ -11483,6 +13368,23 @@ ${bodyHtml}
       const isHeading=/^H[1-6]$/.test(c.block.tagName || "");
       if(isHeading) c.block.insertAdjacentHTML('afterend',calloutHtml(c.item,id));
       else c.block.insertAdjacentHTML('beforeend',markerHtml(c.item,id)+calloutHtml(c.item,id));
+
+      // The same runnable/API/config detail can appear in overview, procedure and
+      // verification sections. Show the full review once, then propagate the same
+      // review marker to equivalent occurrences so one unsafe copy is not left
+      // visually unreviewed merely because another occurrence was selected first.
+      const repeatKind = normalizeReviewKind(c.item);
+      if (c.target && ["CLI_COMMAND","API_CONTRACT","OTHER_MATERIAL_VALIDATION","FILE_LOG_PATH"].includes(repeatKind)) {
+        for (const other of allBlocks()) {
+          if (other === c.block || other.closest('.xa-inline-review-callout')) continue;
+          const score = targetScore(other.textContent, c.target);
+          if (score < 650) continue;
+          if (other.querySelector(`[data-xa-review-id="${id}"]`)) continue;
+          const otherHeading=/^H[1-6]$/.test(other.tagName || "");
+          if (otherHeading) other.insertAdjacentHTML('afterend',markerHtml(c.item,id));
+          else other.insertAdjacentHTML('beforeend',markerHtml(c.item,id));
+        }
+      }
       placed.push(id);
     }
     return {html:root.innerHTML,count:placed.length,placedIds:placed};
@@ -11626,6 +13528,26 @@ ${bodyHtml}
     return best.score>=0.24 ? best.text.slice(0,320) : "";
   }
 
+  function classifyTechnicalFenceReview(language, rawBody, fenceContext) {
+    const lang = cleanText(language || "code").toLowerCase();
+    const context = String(fenceContext || "");
+    const body = String(rawBody || "");
+    const immediateLead = context.slice(0, Math.min(context.length, 260));
+    const apiContext = /\b(?:API|HTTP|request|response|endpoint|gateway)\b|\/public_api\//i.test(context);
+    const responseBodyShape = /["']?(?:reply|err_code|err_msg|total_count|result_count|alerts|status_code|error|message)["']?\s*:/i.test(body);
+    const responseLead = /\b(?:response(?: body)?|returns?|returned|HTTP\s+(?:200|400|401|403|404|409|429|500)|empty alert array|unauthorized)\b/i.test(immediateLead);
+    const requestBodyShape = /["']?(?:request_data|request|filters?|query|parameters?|params|api_key|nonce|timestamp)["']?\s*:/i.test(body);
+    const explicitExecutableRequest = /\bcurl\b|^(?:\s*)(?:GET|POST|PUT|PATCH|DELETE)\s+\/|https?:\/\//im.test(body);
+    const readOnlyApiResponse = ["json","code","output","text","plaintext"].includes(lang) && apiContext && (responseBodyShape || responseLead) && !explicitExecutableRequest && !requestBodyShape;
+    const cliLanguage = ["powershell","ps1","bash","shell","sh","zsh","cmd","batch","bat"].includes(lang);
+    const apiRequestBlock = apiContext && (explicitExecutableRequest || requestBodyShape || /\b(?:request body|request payload|payload to send)\b/i.test(immediateLead));
+    if (readOnlyApiResponse) return {reviewKind:"API_CONTRACT", mode:"api_response"};
+    if (apiRequestBlock) return {reviewKind:"API_CONTRACT", mode:"api_request"};
+    if (cliLanguage) return {reviewKind:"CLI_COMMAND", mode:"cli"};
+    if (["output","text","plaintext"].includes(lang)) return {reviewKind:"OTHER_MATERIAL_VALIDATION", mode:"read_only_output"};
+    return {reviewKind:"OTHER_MATERIAL_VALIDATION", mode:"runnable"};
+  }
+
   function deriveConcreteReviewItems(artifact, type) {
     const text = String(artifact || "");
     const reviewBody = removeKnowledgeSection(text, ["Source References", "TAC/SME Validation Items", "Validation Items", "Knowledge Reuse Basis — Internal Drafting Note", "Knowledge Reuse Basis", "Internal Notes — Full Context (Internal Only)", "Internal Notes — TAC Only", "Internal Notes"]);
@@ -11739,11 +13661,126 @@ ${bodyHtml}
         "Exact image tags can change independently of the surrounding procedure. A historical or inferred tag should not be presented as the supported default unless current authority confirms it.",
         "Product SME / Documentation owner", "REVIEW", "", "", "OTHER_MATERIAL_VALIDATION");
 
-      const xql = first(/dataset\s*=\s*pan_dss_raw/i);
-      if (xql) add(xql,
-        "Verify the XQL example and field names used in the query against the supported dataset schema.",
-        "A documentation/KCS query must be directly runnable; incorrect field names would make the troubleshooting guidance fail even when the product behavior is correct.",
-        "TAC SME / Documentation owner", "REVIEW", "", "", "OTHER_MATERIAL_VALIDATION");
+      const mappedForXql = parseKnowledgeSourceReferences(text);
+      const sourceLooksMaintainedForQuery = refs => (refs || []).some(key => {
+        const ref = mappedForXql.get(key);
+        if (!ref) return false;
+        const provenance = knowledgeSourceProvenance(ref);
+        const freshness = cleanText(ref.freshness || "");
+        return /Official product documentation|Salesforce Knowledge/i.test(provenance) && !/historical|currentness not established|superseded|deprecated/i.test(freshness);
+      });
+      const xqlTargets = [];
+      for (const m of reviewBody.matchAll(/```\s*xql\s*\n([\s\S]*?)```/gi)) {
+        const body = cleanText(m[1] || "");
+        if (body) xqlTargets.push(body.slice(0,320));
+      }
+      for (const m of reviewBody.matchAll(/\bdataset\s*=\s*[A-Za-z0-9_.:-]+/gi)) {
+        const target = cleanText(m[0] || "");
+        if (target && !xqlTargets.some(x => normalizeFieldValueForCompare(x).includes(normalizeFieldValueForCompare(target)))) xqlTargets.push(target);
+      }
+      const seenXql = new Set();
+      for (const xql of xqlTargets.slice(0,6)) {
+        const key = normalizeFieldValueForCompare(xql);
+        if (!key || seenXql.has(key)) continue;
+        seenXql.add(key);
+        const xqlAnchor = xql.split(/\r?\n/).map(cleanText).find(Boolean) || xql;
+        const refs = refsNearTarget(text, xqlAnchor);
+        if (refs.length && sourceLooksMaintainedForQuery(refs)) continue;
+        add(xql,
+          "Verify the exact XQL/dataset example, field names, functions and syntax against the currently supported dataset schema before retaining it as runnable guidance.",
+          "Exact datasets, fields and XQL functions are operational instructions. A stale or case-derived query can fail even when the surrounding diagnosis is correct.",
+          "TAC SME / Documentation owner", "REVIEW", "", "", "OTHER_MATERIAL_VALIDATION", refs);
+      }
+
+      // Generic runnable/copy-paste technical blocks receive the same evidence-bound
+      // review treatment as XQL. Correct blocks backed by a current maintained
+      // authoritative source do not get a visible warning; unresolved exact syntax does.
+      const executableFenceRe = /```\s*(xql|sql|python|py|javascript|js|typescript|ts|powershell|ps1|bash|shell|sh|zsh|cmd|batch|bat|json|yaml|yml|regex|output|text|plaintext|http|xml|ini|toml|conf|config)?\s*\n([\s\S]*?)```/gi;
+      let executableFenceCount = 0;
+      for (const m of reviewBody.matchAll(executableFenceRe)) {
+        if (executableFenceCount >= 6) break;
+        const language = cleanText(m[1] || "code").toLowerCase();
+        if (language === "xql") continue; // handled by the dedicated XQL guard above
+        const rawBody = String(m[2] || "").trim();
+        const body = cleanText(rawBody);
+        if (!body || body.length < 4) continue;
+        if (/\n\s*#{2,6}\s+|\n\s*\*Note:\*|\n\s*(?:[-*+]\s+){2,}/i.test(rawBody) && !/^(?:json|yaml|yml|text|plaintext|output)$/i.test(language)) continue;
+        if (language === "code" && !/(?:^|\n)\s*(?:[$>]\s*|curl\b|(?:GET|POST|PUT|PATCH|DELETE)\s+\/|dataset\s*=|import\s+|from\s+\S+\s+import\s+|(?:const|let|var|function|def|class|if|for|while)\b|[A-Za-z_][A-Za-z0-9_.-]*\s*=|[\[{])/im.test(rawBody)) continue;
+        executableFenceCount++;
+        const anchor = body.split(/\r?\n/).map(cleanText).find(Boolean) || body;
+        const refs = refsNearTarget(text, anchor);
+        if (refs.length && sourceLooksMaintainedForQuery(refs)) continue;
+        const status = "REVIEW";
+        const fenceIndex = Number(m.index || 0);
+        const fenceContext = reviewBody.slice(Math.max(0, fenceIndex - 420), Math.min(reviewBody.length, fenceIndex + String(m[0] || "").length + 420));
+        const fenceClass = classifyTechnicalFenceReview(language, rawBody, fenceContext);
+        const readOnlyApiResponse = fenceClass.mode === "api_response";
+        const readOnlyOutput = fenceClass.mode === "read_only_output";
+        const reviewKind = fenceClass.reviewKind;
+        const what = readOnlyApiResponse
+          ? "Verify this read-only API response/output example against the currently supported response schema and product/version scope. Correct or generalize fields/status content that is not current."
+          : readOnlyOutput
+            ? "Verify this read-only output/example against the currently supported product/version behavior. It is not executable configuration; correct or generalize stale exact output if necessary."
+            : `Verify this ${language.toUpperCase()} runnable/configuration block against the currently supported authoritative source: syntax, identifiers, product/version scope, placeholders, prerequisites and material side effects. Correct it from the source when possible; if exact runnable content cannot be established, generalize it instead of manufacturing syntax.`;
+        const why = readOnlyApiResponse
+          ? "A response example is not executable configuration, but exact response fields and error structures are still part of the API contract and can become stale across releases."
+          : readOnlyOutput
+            ? "Read-only output can become stale across versions, but it should not be described as runnable configuration or an executable request."
+            : "Runnable examples are copied directly into operational environments. Plausible-looking but unsupported syntax, fields, routes or configuration values can fail or cause unintended changes even when the surrounding explanation is correct.";
+        const outcome = readOnlyApiResponse
+          ? "Confirm/correct the response example from current API documentation or maintained authority, or generalize it to the stable behavior without presenting stale schema as exact output."
+          : readOnlyOutput
+            ? "Confirm/correct the output from a current source, or generalize it to the stable observable behavior."
+            : "Confirm/correct the block from a current supported source, or replace it with non-runnable guidance plus a precise validation requirement.";
+        add(body.slice(0,320), what, why, "TAC SME / Documentation owner", status, "", outcome, reviewKind, refs);
+      }
+
+      const internalSourceMap = parseKnowledgeSourceReferences(text);
+      const publicAuthorityForRefs = refs => (refs || []).some(key => {
+        const ref = internalSourceMap.get(String(key || "").toUpperCase());
+        if (!ref) return false;
+        const provenance = knowledgeSourceProvenance(ref);
+        return /Official product documentation|Official Palo Alto Networks web source|Salesforce Knowledge/i.test(provenance) && knowledgeSourceReviewState(ref, job) === "CURRENT";
+      });
+      let internalArchitectureCount = 0;
+      for (const sentence0 of reviewBody.split(/(?<=[.!?])\s+|\n+/)) {
+        if (internalArchitectureCount >= 4) break;
+        const sentence = cleanText(sentence0 || "");
+        if (!sentence || sentence.length < 35 || sentence.length > 520) continue;
+        const internalSignal = /\b(?:feature flag|backend metadata|production (?:database|db|firestore)|gcp (?:project|kubernetes)|kubernetes|pod logs?|container logs?|namespace|elevated role|internal ticket routing|jira component|backend service|internal service|internal proxy|proxy listener|internal listener|microservice|subprocess|scouter|backend partition|backend job|worker thread|thread initialization|internal database|internal api|stack trace)\b|\b[a-z][a-z0-9]+(?:_[a-z0-9]+){1,}(?:_toggle|_flag|_enabled)?\b\s*=\s*(?:true|false)|\bexpose_[a-z0-9_]+\b/i.test(sentence);
+        if (!internalSignal) continue;
+        const refs = refsNearTarget(text, sentence.slice(0,260));
+        if (publicAuthorityForRefs(refs)) continue;
+        const privilegedExact = /\b(?:production (?:database|db|firestore)|gcp (?:project|kubernetes)|kubernetes|pod logs?|container logs?|namespace|elevated role|internal ticket routing|jira component|internal api|feature flag)\b|\b[a-z][a-z0-9]+(?:_[a-z0-9]+){1,}(?:_toggle|_flag|_enabled)?\b\s*=\s*(?:true|false)|\bexpose_[a-z0-9_]+\b/i.test(sentence);
+        add(sentence.slice(0,320),
+          "Keep only the supported observable behavior/action in the public body. Move the exact internal service/listener/process/backend identifier or privileged implementation mechanic to Internal Notes — TAC Only unless current maintained public/approved documentation explicitly supports that exact detail for public reuse.",
+          "Internal implementation identifiers and backend mechanics can change independently, may be Engineering-only, and are not customer-facing product guarantees merely because they were observed in a case or Jira investigation.",
+          "TAC SME / Knowledge owner", privilegedExact ? "BLOCKER" : "REVIEW", "", "Rewrite the public claim at the supported behavior/action level and preserve the exact sourced implementation detail only in Internal Notes. Retain it publicly only when a current maintained public/approved source explicitly documents the same mechanism and scope.", "INTERNAL_ARCHITECTURE", refs);
+        internalArchitectureCount++;
+      }
+
+      const prevalenceMap = parseKnowledgeSourceReferences(text);
+      const prevalenceSeen = new Set();
+      for (const sentence0 of reviewBody.split(/(?<=[.!?])\s+|\n+/)) {
+        const sentence = cleanText(sentence0 || "");
+        if (!sentence || sentence.length < 35 || sentence.length > 420) continue;
+        if (!/\b(?:most common(?:ly)?|frequently|commonly|often|usually)\b/i.test(sentence)) continue;
+        const key = normalizeFieldValueForCompare(sentence);
+        if (!key || prevalenceSeen.has(key)) continue;
+        prevalenceSeen.add(key);
+        const refs = refsNearTarget(text, sentence.slice(0,220));
+        const exactAuthority = refs.some(refKey => {
+          const ref = prevalenceMap.get(refKey);
+          if (!ref || knowledgeSourceReviewState(ref, job) !== "CURRENT") return false;
+          return /\b(?:most common(?:ly)?|frequently|commonly|often|usually)\b/i.test(cleanText(ref.evidence || ""));
+        });
+        if (exactAuthority) continue;
+        add(sentence.slice(0,320),
+          "Verify or remove the prevalence wording (for example ‘frequently’ or ‘most common’) unless a current authoritative source explicitly supports that frequency claim.",
+          "Case-specific evidence can establish that a condition occurred, but it cannot by itself establish how common that condition is across customers or cases.",
+          "TAC SME / Knowledge owner", "REVIEW", "", "", "PREVALENCE_GENERALIZATION", refs);
+        if (prevalenceSeen.size >= 3) break;
+      }
 
       const cieLog = first(/CloudIdAgentDebug\.log|CloudIdAgentConfig\.xml|C:\\Program Files \(x86\)\\Palo Alto Networks\\Cloud Identity Agent/i);
       if (cieLog && !refsNearTarget(text, cieLog).length) add(cieLog,
@@ -11874,10 +13911,18 @@ ${bodyHtml}
   }
   function pruneKnowledgeReviewItems(items, artifact, type) {
     const publicBody = removeKnowledgeSection(String(artifact || ""), ["Source References", "TAC/SME Validation Items", "Validation Items", "Knowledge Reuse Basis — Internal Drafting Note", "Knowledge Reuse Basis", "Internal Notes — Full Context (Internal Only)", "Internal Notes — TAC Only", "Internal Notes"]);
+    const refMap = parseKnowledgeSourceReferences(String(artifact || ""));
+    const claimMap = knowledgeReferenceClaimMap(String(artifact || ""));
     return (items || []).filter(item => {
       const q = `${item?.target || ""} ${item?.what || ""} ${item?.conflict || ""} ${item?.why || ""}`;
       if (/quality validation|temporarily unavailable|independent quality/i.test(q)) return false;
       const kind = normalizeReviewKind(item);
+      if (kind === "DERIVATIVE_AI_EVIDENCE") {
+        const derivativeRefs = (item?.refs || []).filter(key => knowledgeSourceIsDerivative(refMap.get(String(key || "").toUpperCase())));
+        if (item?.target && independentAuthorityRefsForClaim(item.target, derivativeRefs, claimMap, refMap).length) return false;
+        // A derivative source confined to Internal Notes is not a public publication blocker.
+        if (derivativeRefs.length && !derivativeRefs.some(key => (claimMap.get(String(key).toUpperCase()) || []).length)) return false;
+      }
       const sourceOnly = ["MISSING_SOURCE_OR_LINK","DERIVATIVE_AI_EVIDENCE"].includes(kind);
       if (!sourceOnly && !reviewClaimIsMaterial(item?.target || "")) return false;
       if (/\/tags\/agents\/(?:assign|remove)|public api request parameter schema/i.test(q) && !/\/tags\/agents\/(?:assign|remove)/i.test(publicBody)) return false;
@@ -11960,6 +14005,66 @@ ${bodyHtml}
     return !roleOnly;
   }
 
+  function knowledgeSourceIsDerivative(ref) {
+    return /AI-assisted synthesis|Case Chat|TACopilot|\bTACO\b|generated derivative/i.test(`${knowledgeSourceProvenance(ref)} ${ref?.identity || ""}`);
+  }
+
+  function reviewClaimsEquivalent(a, b) {
+    const norm = value => normalizeFieldValueForCompare(cleanText(value || "").replace(/\[[Rr]\d+(?:\s*[,;]\s*[Rr]\d+)*\]/g, " "));
+    const left = norm(a), right = norm(b);
+    if (!left || !right) return false;
+    if (left === right) return true;
+    const shorter = left.length <= right.length ? left : right;
+    const longer = left.length > right.length ? left : right;
+    return shorter.length >= 48 && longer.includes(shorter);
+  }
+
+  function independentAuthorityRefsForClaim(claim, excludeRefs, claimMap, refMap) {
+    const excluded = new Set((excludeRefs || []).map(x=>String(x||"").toUpperCase()));
+    const candidates = [];
+    for (const [key, claims] of claimMap || []) {
+      if (excluded.has(String(key).toUpperCase())) continue;
+      const ref = refMap?.get?.(key);
+      if (!ref || knowledgeSourceIsDerivative(ref)) continue;
+      candidates.push({key, ref, claims:claims || []});
+    }
+
+    const whole = [];
+    for (const candidate of candidates) {
+      const exact = candidate.claims.some(x => reviewClaimsEquivalent(x, claim));
+      // Different sections often express the same supported behavior with different
+      // wording. Use the same conservative technical-source matcher used for citation
+      // inheritance so an original/maintained source can satisfy authority without
+      // requiring sentence-level textual identity. Exact numbers/commands/routes still
+      // have to match because sourceMatchScore enforces distinctive technical markers.
+      const semantic = !exact ? sourceMatchScore(claim, candidate.ref, candidate.claims) : 0;
+      if (exact || semantic >= 0.62) whole.push(candidate.key);
+    }
+    if (whole.length) return whole;
+
+    // A derivative sentence can combine two independently authoritative facts into
+    // one conjunction (for example an exception-precedence fact plus an identifier-
+    // formatting fact). Do not demand one original source to support the entire
+    // synthesized sentence. Require every material clause to be independently covered.
+    const substantive = cleanText(String(claim || "")
+      .replace(/^(?:note\s*:\s*)?(?:prior|previous|historical)\s+(?:support\s+)?cases?\s+(?:confirm|confirmed|show|showed|document|documented|establish|established)\s+(?:that\s+)?/i, ""));
+    const clauses = substantive.split(/\s+(?:and|but)\s+(?:that\s+)?/i).map(cleanText).filter(x => x.length >= 24).slice(0,4);
+    if (clauses.length < 2) return [];
+
+    const coveredBy = [];
+    for (const clause of clauses) {
+      let best = null;
+      for (const candidate of candidates) {
+        const exact = candidate.claims.some(x => reviewClaimsEquivalent(x, clause));
+        const score = exact ? 1 : sourceMatchScore(clause, candidate.ref, candidate.claims);
+        if (score >= 0.50 && (!best || score > best.score)) best = {key:candidate.key, score};
+      }
+      if (!best) return [];
+      coveredBy.push(best.key);
+    }
+    return [...new Set(coveredBy)];
+  }
+
   function deriveSourceGovernanceReviewItems(artifact, refMap, job) {
     const bodyUsed = knowledgeUsedReferenceIds(artifact);
     const claimMap = knowledgeReferenceClaimMap(artifact);
@@ -11971,7 +14076,7 @@ ${bodyHtml}
     for (const key of allUsed) {
       const ref = refMap?.get(key); if (!ref) continue;
       const provenance = knowledgeSourceProvenance(ref);
-      const derivative = /AI-assisted synthesis|Case Chat|TACopilot|\bTACO\b/i.test(`${provenance} ${ref.identity || ""}`);
+      const derivative = knowledgeSourceIsDerivative(ref);
       let bodyClaim = bodyUsed.has(key) ? bestMaterialReviewClaimForRef(key, ref, claimMap, `${ref.supports || ""} ${ref.evidence || ""}`) : "";
       if (!bodyClaim && derivative && bodyUsed.has(key)) bodyClaim = cleanText((claimMap.get(key) || [])[0] || "").slice(0,320);
       const internalClaim = !bodyClaim && internalUsed.has(key) ? internalMaterialClaimForRef(internalRaw, key) : "";
@@ -11985,10 +14090,16 @@ ${bodyHtml}
 
       const sourceLabel = compactKnowledgeSourceIdentity(key, ref);
       if (derivative) {
+        // Derivative material is a publication blocker only when a PUBLIC reusable
+        // claim has no independent original/maintained authority. Internal-Notes-only
+        // synthesis is explicitly non-authoritative context and does not block by itself.
+        if (!bodyUsed.has(key)) continue;
+        const independentRefs = independentAuthorityRefsForClaim(claim, [key], claimMap, refMap);
+        if (independentRefs.length) continue;
         items.push({
           status:"BLOCKER", target:claim, owner:"TAC SME / Knowledge owner", reviewKind:"DERIVATIVE_AI_EVIDENCE",
-          what:`Trace the highlighted claim away from derivative evidence. ${sourceLabel} is generated/synthesized evidence and cannot be the sole authority for this reusable claim.`,
-          why:`The highlighted claim currently depends on ${sourceLabel}. Generated/TACopilot/Case Chat/TACO synthesis can help discovery, but allowing it to become authority in later knowledge creates circular evidence.`,
+          what:`Trace the highlighted claim away from derivative evidence. ${sourceLabel} is generated/synthesized evidence and is currently the only material authority mapped to this reusable public claim.`,
+          why:`Generated/TACopilot/Case Chat/TACO synthesis can help discovery, but it cannot become the sole authority in reusable public knowledge.`,
           outcome:"Locate the original Jira/Engineering, Salesforce case evidence, maintained KCS/internal documentation, current official documentation, or explicit current SME confirmation for this exact claim. If no original authority can be established, remove or generalize the claim.",
           refs:[key]
         });
@@ -12092,6 +14203,98 @@ ${bodyHtml}
     return `<div class="xa-validation-notice ${blocker?"blocker":"review"}"><div class="xa-validation-notice-title">${blocker?"✕ VALIDATION REQUIRED — BLOCKER":"⚠ VALIDATION REQUIRED — REVIEW"}</div><div class="xa-validation-notice-text">This is a generated draft based on the internal/product evidence available to TACopilot/XSUP Auditor. Cases, KCS articles, Confluence/runbooks, Jira/XSUP findings, web documentation and AI-assisted synthesis can be historical, version-specific, superseded or inaccurate. Validate every material technical claim against current supported product behavior and maintained sources before publication or authoritative reuse. Inline REVIEW/BLOCKER callouts identify each affected claim or reference and state what to verify, why, and the required action. Exact timing or operational observations from case/Engineering evidence are not product guarantees unless current maintained authority supports them. Internal Notes may preserve deeper sourced Engineering context for TAC, but that internal context is not automatically a current public product guarantee. Do not treat this draft itself as an authoritative source.${escapeHtml(qualityLine)}</div></div>`;
   }
 
+  function isKcsFamilyArtifactType(type) {
+    return /^KCS(?:_|$)/i.test(String(type || ""));
+  }
+
+  const CORTEX_BRAIN_KCS_VALIDATION_PROMPT = `MANDATORY VALIDATION — NOT PUBLICATION READY
+
+This proposed KCS is generated content. It MUST be independently validated before it is published, copied into Salesforce Knowledge, sent to customers, or treated as authoritative.
+
+You are reviewing a proposed Palo Alto Networks KCS article generated from an XSUP/support investigation. Independently validate the technical content using the internal Cortex Brain knowledge, source access, code/repository access, current product documentation, Engineering evidence, and other applicable authoritative sources available to you.
+
+Validate every material technical claim, including product behavior, product/version/platform scope, prerequisites, root cause, limitations, timing statements, commands, PowerShell/CLI, XQL/SQL, API routes/request/response schemas, configuration or registry values, paths/files/logs, service actions, upgrade targets, workarounds, side effects, verification steps, and customer-facing versus TAC-only boundaries.
+
+For each material issue found:
+1. Quote or identify the exact claim/section.
+2. Classify it as CORRECT, INCORRECT, OUTDATED, UNSUPPORTED, INCOMPLETE, or REQUIRES SME CONFIRMATION.
+3. Cite the authoritative evidence used for the conclusion.
+4. Provide the corrected wording/procedure when a change is needed.
+
+Additional rules:
+- Do not treat this generated KCS or any AI/Case Chat/TACO synthesis as authoritative evidence.
+- Trace [R#] citations to the underlying source and verify that the source actually supports the specific claim.
+- Distinguish historical/case-observed behavior from current supported product behavior.
+- Verify exact runnable syntax and exact API/configuration contracts; do not assume plausible-looking syntax is correct.
+- Confirm that internal implementation identifiers or Engineering-only mechanics are not presented as supported customer-facing guarantees unless maintained public/approved documentation explicitly supports them.
+- Identify any unsupported generalization, missing prerequisite, dangerous side effect, stale version scope, or conflicting source.
+- Preserve useful TAC-only context as internal-only; do not recommend publishing privileged/internal implementation detail merely because it is technically accurate.
+
+At the end, provide:
+- Publication assessment: READY / CHANGES REQUIRED / BLOCK
+- Required changes before publication
+- Any claims that still require named Product/Engineering/Documentation SME confirmation.`;
+
+  function stripValidationExportTraceability(artifact) {
+    let text = String(artifact || "");
+    // Origin/authoring traceability belongs to the XSUP Auditor report, not to the
+    // clean KCS package being independently validated by Cortex Brain.
+    text = text.replace(/(?:^|\n)###\s+Origin\s*\/\s*Traceability\s*\n[\s\S]*?(?=\n###\s+|\n##\s+|$)/i, "\n");
+    text = removeKnowledgeSection(text, [
+      "TAC/SME Validation Items",
+      "Validation Items",
+      "Review Details",
+      "Knowledge Reuse Basis — Internal Drafting Note",
+      "Knowledge Reuse Basis",
+      "Internal Drafting Note",
+      "Knowledge Channel / Reuse Note"
+    ]);
+    text = text.replace(/(?:^|\n)##\s+Internal Notes\s+—\s+TAC Only\s*(?=\n##\s+|$)/i, "\n");
+    return text.replace(/\n{3,}/g,"\n\n").trim();
+  }
+
+  function cortexBrainKcsValidationPackage(job, artifact, type) {
+    if (!isKcsFamilyArtifactType(type)) return "";
+    // knowledgeArtifactHtml passes the same normalized/evidence-enveloped artifact
+    // used for the human report. Export from that canonical text directly so the SME
+    // validation package cannot diverge from what the reviewer is looking at.
+    const cleanArtifact = stripValidationExportTraceability(String(artifact || ""));
+    const title = `${jobDisplayKey(job)} — ${knowledgeArtifactLabel(type)}`;
+    return `${CORTEX_BRAIN_KCS_VALIDATION_PROMPT}
+
+---
+PROPOSED KCS CONTENT FOR VALIDATION
+Artifact: ${title}
+Product: ${productLabel(job)}
+Related Salesforce Case: ${job?.caseNumber || "Not available"}
+---
+
+${cleanArtifact}`.trim();
+  }
+
+  function cortexBrainValidationFilename(job, type) {
+    const suffix = type === "KCS_UPDATE" ? "KCS_Update_Validation" : type === "KCS_DRAFT" ? "KCS_Draft_Validation" : `${String(type || "KCS").replace(/[^A-Za-z0-9]+/g,"_")}_Validation`;
+    return `${artifactBase(job, true)}_${suffix}_Cortex_Brain.md`;
+  }
+
+  function cortexBrainValidationToolsHtml(job, artifact, type) {
+    if (!isKcsFamilyArtifactType(type)) return "";
+    const payload = cortexBrainKcsValidationPackage(job, artifact, type);
+    if (!payload) return "";
+    const id = `xa-cortex-brain-payload-${String(job?.xsup || job?.caseNumber || "kcs").replace(/[^A-Za-z0-9_-]+/g,"-")}`;
+    const encoded = encodeURIComponent(payload);
+    const filename = cortexBrainValidationFilename(job, type);
+    return `<div class="xa-sme-validation-tools">
+      <div class="xa-sme-validation-title">SME Validation Tools</div>
+      <div class="xa-sme-validation-warning"><strong>Internal SME use only.</strong> Independent technical validation is mandatory before this generated KCS is published, copied into Salesforce Knowledge, sent to customers, or treated as authoritative. These controls export a validation prompt plus the clean proposed KCS and source references; XSUP Auditor review callouts are intentionally excluded.</div>
+      <div class="xa-sme-validation-actions">
+        <button type="button" class="xa-sme-validation-btn" data-xa-cortex-copy="${escapeHtml(id)}">Copy for Cortex Brain</button>
+        <button type="button" class="xa-sme-validation-btn" data-xa-cortex-download="${escapeHtml(id)}" data-xa-cortex-filename="${escapeHtml(filename)}">Download for Cortex Brain</button>
+      </div>
+      <textarea id="${escapeHtml(id)}" hidden>${escapeHtml(encoded)}</textarea>
+    </div>`;
+  }
+
   function knowledgeArtifactHtml(job) {
     const type = job.knowledgeArtifactType || knowledgeArtifactType(job);
     const label = knowledgeArtifactLabel(type);
@@ -12123,9 +14326,9 @@ ${bodyHtml}
       ${validationNotice}
       ${knowledgeDecision}
       <div class="xa-at-glance-box"><div class="xa-at-glance-title">At a Glance</div><div class="xa-at-glance-text">${atGlanceHtml}</div></div>
-      <div class="meta"><span class="pill info">Release: Initial Team Release</span><span class="pill info">SFDC: ${escapeHtml(job.caseNumber || "—")}</span><span class="pill info">Product: ${escapeHtml(productLabel(job))}</span><span class="pill info">${knowledgeRoleLabel(job.knowledgeRole)} knowledge: ${escapeHtml(job.knowledgeAction || "—")}</span>${publication?`<span class="pill ${publication==="BLOCKER"?"bad":"warn"}">${escapeHtml(publication)}</span>`:""}${highlighted.count?`<span class="pill warn">Inline claim reviews: ${highlighted.count}</span>`:""}</div>
+      <div class="meta"><span class="pill info">Release: v1.0 · Initial Team Release</span><span class="pill info">SFDC: ${escapeHtml(job.caseNumber || "—")}</span><span class="pill info">Product: ${escapeHtml(productLabel(job))}</span><span class="pill info">${knowledgeRoleLabel(job.knowledgeRole)} knowledge: ${escapeHtml(job.knowledgeAction || "—")}</span>${publication?`<span class="pill ${publication==="BLOCKER"?"bad":"warn"}">${escapeHtml(publication)}</span>`:""}${highlighted.count?`<span class="pill warn">Inline claim reviews: ${highlighted.count}</span>`:""}</div>
       ${sourceRefIds.size?'<div class="xa-ref-help"><strong>[R#]</strong> jumps to one canonical source entry at the bottom. Use the source link there to open Jira, SFDC, documentation, or the referenced case.</div>':""}
-      <div class="section xa-knowledge-article-body">${bodyHtml}</div>${canonicalSources}</article>`);
+      <div class="section xa-knowledge-article-body">${bodyHtml}</div>${canonicalSources}</article>${cortexBrainValidationToolsHtml(job, artifact, type)}`);
   }
 
   function knowledgeFilename(job) {
@@ -12654,6 +14857,7 @@ ${bodyHtml}
       throw new Error("This is not a valid XSUP Auditor session file.");
     }
 
+    clearAllStagedPromptAutoPolls();
     state.jobs.clear();
     state.queue = [];
     state.productSelectionMode = payload.product_selection_mode === "manual" ? "manual" : "auto";
@@ -12898,12 +15102,13 @@ ${bodyHtml}
       #xsup-auditor-panel *{box-sizing:border-box}
       .xa-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.xa-title{font-size:18px;font-weight:750}.xa-sub{margin-top:3px;font-size:11px;color:#6b7280}.xa-head-actions{display:flex;align-items:center;gap:2px}.xa-icon{border:0;background:transparent;color:#6b7280;cursor:pointer}.xa-head-actions .xa-icon{width:34px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:7px;font-size:18px;transition:background .12s ease,transform .12s ease}.xa-head-actions .xa-icon:hover{background:#f3f4f6}.xa-head-actions .xa-icon:active{transform:scale(.94)}
       .xa-input-row{display:grid;grid-template-columns:1fr auto auto auto;gap:8px;margin-top:14px;align-items:stretch}#xsup-auditor-input{min-height:64px;max-height:130px;resize:vertical;border:1px solid #d1d5db;border-radius:9px;padding:9px 11px;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}#xsup-auditor-run,#xsup-auditor-direct-kcs{border:0;border-radius:8px;padding:10px 14px;background:#4f46e5;color:#fff;font-weight:700;cursor:pointer}#xsup-auditor-direct-kcs{background:#0f766e!important}#xsup-auditor-stop{border:0;border-radius:8px;padding:10px 12px;background:#dc2626;color:#fff;font-weight:700;cursor:pointer}#xsup-auditor-run:disabled,#xsup-auditor-direct-kcs:disabled,#xsup-auditor-stop:disabled{opacity:.55;cursor:not-allowed}
+      .xa-preflight-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 12px;padding:9px;border:1px solid #c7d2fe;border-radius:10px;background:#f8faff}.xa-preflight-controls button,.xa-job-plan,.xa-job-refresh{font:10px/1.2 inherit;border:1px solid #d1d5db;border-radius:7px;background:#fff;color:#374151;padding:5px 7px}.xa-preflight-controls button{cursor:pointer}.xa-preflight-controls .xa-run-selected{background:#4f46e5;color:#fff;border-color:#4f46e5;font-weight:800;padding:7px 11px}.xa-job-plan{max-width:165px}.xa-job-refresh{max-width:250px}.xa-readonly-choice{display:inline-flex;align-items:center;min-height:28px;padding:5px 8px;border:1px solid #dbeafe;border-radius:7px;background:#f8fbff;color:#1e3a8a;font-size:10px;font-weight:750;cursor:help}.xa-dashboard-row.xa-row-pending{background:#fbfefc}
       .xa-input-help{margin-top:5px;font-size:10px;color:#6b7280}.xa-toggle-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.xa-auto-download{display:flex;align-items:flex-start;gap:8px;margin-top:0;padding:8px 10px;border:1px solid #e5e7eb;border-radius:9px;background:#fafafa;cursor:pointer}.xa-auto-download input{margin-top:2px}.xa-auto-download span{display:flex;flex-direction:column;gap:2px}.xa-auto-download strong{font-size:11px}.xa-auto-download small{font-size:9px;color:#6b7280;line-height:1.35}.xa-status{margin-top:10px;padding:9px 10px;background:#f3f4f6;border-radius:8px;font-size:12px}.xa-status[data-kind="ok"]{background:#ecfdf5;color:#065f46}.xa-status[data-kind="error"]{background:#fef2f2;color:#991b1b}
       .xa-workspace{display:grid;grid-template-columns:220px minmax(0,1fr);gap:12px;margin-top:12px}.xa-sidebar{border:1px solid #e5e7eb;border-radius:11px;background:#fafafa;overflow:hidden;align-self:start;position:sticky;top:0}.xa-side-head{display:flex;align-items:center;justify-content:space-between;padding:9px 10px;border-bottom:1px solid #e5e7eb;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}.xa-side-head span:last-child{font-weight:600;color:#6b7280;text-transform:none;letter-spacing:0}.xa-job-list{max-height:62vh;overflow:auto;padding:6px}.xa-job-empty{padding:12px 8px;color:#6b7280;font-size:11px;line-height:1.5}.xa-job{width:100%;display:flex;gap:8px;align-items:flex-start;border:1px solid transparent;background:transparent;border-radius:9px;padding:8px;text-align:left;cursor:pointer;margin-bottom:4px}.xa-job:hover{background:#f3f4f6}.xa-job-selected{background:#eef2ff!important;border-color:#c7d2fe}.xa-job-icon{width:18px;text-align:center;font-weight:800;line-height:18px}.xa-job-main{min-width:0;display:flex;flex-direction:column;gap:1px;flex:1}.xa-job-main strong{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.xa-job-main em{font-size:10px;font-style:normal;color:#4b5563;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.xa-job-main small{font-size:9px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.xa-job-completed .xa-job-icon{color:#047857}.xa-job-failed .xa-job-icon{color:#b91c1c}.xa-job-running .xa-job-icon{color:#4f46e5}.xa-job-stopped .xa-job-icon{color:#6b7280}
       .xa-detail{min-width:0}.xa-detail-empty{border:1px dashed #d1d5db;border-radius:11px;padding:38px 20px;text-align:center;color:#6b7280;font-size:12px}.xa-selected-title{font-size:14px;font-weight:800;margin:1px 0 4px}
       .xa-execution-pipeline{display:flex;flex-direction:column;gap:5px;margin:7px 0 11px}.xa-pipeline-row{display:grid;grid-template-columns:22px 150px minmax(0,1fr);align-items:start;gap:7px;padding:8px 9px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb}.xa-pipeline-icon{font-size:13px;font-weight:900;text-align:center}.xa-pipeline-label{font-size:10px;font-weight:800;color:#374151}.xa-pipeline-row strong{font-size:10px;line-height:1.4;font-weight:650;word-break:break-word}.xa-pipeline-complete{background:#ecfdf5;border-color:#a7f3d0}.xa-pipeline-complete .xa-pipeline-icon,.xa-pipeline-complete strong{color:#047857}.xa-pipeline-active{background:#eef2ff;border-color:#c7d2fe}.xa-pipeline-active .xa-pipeline-icon,.xa-pipeline-active strong{color:#4338ca}.xa-pipeline-pending{background:#f9fafb;border-color:#e5e7eb}.xa-pipeline-pending .xa-pipeline-icon,.xa-pipeline-pending strong{color:#9ca3af}.xa-pipeline-waiting{background:#fffbeb;border-color:#fde68a}.xa-pipeline-waiting .xa-pipeline-icon,.xa-pipeline-waiting strong{color:#92400e}.xa-pipeline-failed{background:#fef2f2;border-color:#fecaca}.xa-pipeline-failed .xa-pipeline-icon,.xa-pipeline-failed strong{color:#b91c1c}.xa-pipeline-skipped{background:#f9fafb;border-color:#e5e7eb}.xa-pipeline-skipped .xa-pipeline-icon,.xa-pipeline-skipped strong{color:#6b7280}.xa-section-title-top{margin-top:10px!important}
       .xa-target-links{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}.xa-target-link{display:inline-flex;align-items:center;padding:6px 9px;border:1px solid #c7d2fe;border-radius:999px;background:#eef2ff;color:#3730a3;text-decoration:none;font-size:11px;font-weight:700}.xa-target-link:hover{background:#e0e7ff;text-decoration:underline}.xa-target-note{display:inline-flex;align-items:center;padding:6px 9px;border:1px dashed #d1d5db;border-radius:999px;color:#6b7280;font-size:10px}
-      .xa-dashboard-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}.xa-dashboard-head h2{margin:0;font-size:17px}.xa-dashboard-head p{margin:3px 0 0;color:#6b7280;font-size:11px}.xa-dashboard-head>span{font-size:11px;color:#6b7280}.xa-stats{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:8px;margin-bottom:12px}.xa-stat{border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#fafafa}.xa-stat strong{display:block;font-size:20px}.xa-stat span{font-size:10px;color:#6b7280}.xa-stat.ok{background:#ecfdf5;border-color:#a7f3d0}.xa-stat.warn{background:#fffbeb;border-color:#fde68a}.xa-stat.bad{background:#fef2f2;border-color:#fecaca}.xa-stat.run{background:#eef2ff;border-color:#c7d2fe}.xa-dashboard-table-wrap{border:1px solid #e5e7eb;border-radius:10px;overflow:auto}.xa-dashboard-table{width:100%;border-collapse:collapse;font-size:10px;min-width:1450px}.xa-dashboard-table th{position:sticky;top:0;background:#f9fafb;text-align:left;padding:8px;border-bottom:1px solid #e5e7eb;color:#4b5563}.xa-dashboard-table td{padding:8px;border-bottom:1px solid #f3f4f6;vertical-align:top}.xa-dashboard-table tr:last-child td{border-bottom:0}.xa-dashboard-row.xa-row-running{background:linear-gradient(90deg,rgba(238,242,255,.45),transparent 35%)}.xa-dashboard-row.xa-row-queued{background:linear-gradient(90deg,rgba(255,251,235,.5),transparent 35%)}.xa-table-link{border:0;background:none;padding:0;color:#4f46e5;text-decoration:underline;text-underline-offset:2px;font:inherit;font-weight:700;cursor:pointer;text-align:left}.xa-status-pill{display:inline-flex;padding:3px 6px;border-radius:999px;background:#f3f4f6;white-space:nowrap;margin-top:4px}.xa-pill-running{background:#eef2ff;color:#3730a3}.xa-pill-queued{background:#fffbeb;color:#92400e}.xa-pill-completed{background:#ecfdf5;color:#065f46}.xa-pill-failed{background:#fef2f2;color:#991b1b}.xa-pill-needs_selection,.xa-pill-needs_product{background:#fffbeb;color:#92400e}.xa-empty-cell{text-align:center;color:#6b7280;padding:25px!important}.xa-activity{max-width:260px;line-height:1.35;word-break:break-word}.xa-progress-wrap{min-width:150px}.xa-progress-wrap.compact{min-width:0;margin-top:4px}.xa-progress-top{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:10px;margin-bottom:4px}.xa-progress-top strong{font-size:10px;white-space:nowrap}.xa-progress-sub{font-size:8px;color:#6366f1;max-width:145px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.xa-progress-track{height:7px;border-radius:999px;background:#e5e7eb;overflow:hidden}.xa-progress-track span{display:block;height:100%;border-radius:999px;background:#6366f1;transition:width .3s ease}.xa-progress-wrap.compact .xa-progress-top{display:none}.xa-progress-wrap.compact .xa-progress-track{height:4px}.xa-job-completed .xa-progress-track span{background:#10b981}.xa-heartbeat{font-size:9px;white-space:normal;line-height:1.3;color:#4b5563}.xa-heartbeat[data-kind="live"]{color:#047857}.xa-heartbeat[data-kind="warn"]{color:#92400e;font-weight:700}.xa-heartbeat[data-kind="bad"]{color:#b91c1c;font-weight:700}.xa-heartbeat[data-kind="ok"]{color:#047857}.xa-selected-progress{margin-top:10px;border:1px solid #c7d2fe;border-radius:10px;padding:10px;background:#f8faff}.xa-selected-progress-main{display:grid;grid-template-columns:180px minmax(0,1fr);gap:12px;align-items:center}.xa-selected-progress-main>div:first-child span{display:block;font-size:9px;color:#6b7280}.xa-selected-progress-main>div:first-child strong{display:block;font-size:18px;margin-top:1px}.xa-selected-progress-meta{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:9px;color:#4b5563}.xa-selected-progress-meta em{font-style:normal}.xa-selected-progress-meta em[data-kind="warn"]{color:#92400e;font-weight:700}.xa-selected-progress-meta em[data-kind="bad"]{color:#b91c1c;font-weight:700}.xa-selected-progress-meta em[data-kind="live"]{color:#047857}
+      .xa-dashboard-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}.xa-dashboard-head h2{margin:0;font-size:17px}.xa-dashboard-head p{margin:3px 0 0;color:#6b7280;font-size:11px}.xa-dashboard-head>span{font-size:11px;color:#6b7280}.xa-stats{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:8px;margin-bottom:12px}.xa-stat{border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#fafafa}.xa-stat strong{display:block;font-size:20px}.xa-stat span{font-size:10px;color:#6b7280}.xa-stat.ok{background:#ecfdf5;border-color:#a7f3d0}.xa-stat.warn{background:#fffbeb;border-color:#fde68a}.xa-stat.bad{background:#fef2f2;border-color:#fecaca}.xa-stat.run{background:#eef2ff;border-color:#c7d2fe}.xa-dashboard-table-wrap{border:1px solid #e5e7eb;border-radius:10px;overflow:auto}.xa-dashboard-table{width:100%;border-collapse:collapse;font-size:10px;min-width:1760px}.xa-dashboard-table th{position:sticky;top:0;background:#f9fafb;text-align:left;padding:8px;border-bottom:1px solid #e5e7eb;color:#4b5563}.xa-dashboard-table td{padding:8px;border-bottom:1px solid #f3f4f6;vertical-align:top}.xa-dashboard-table tr:last-child td{border-bottom:0}.xa-dashboard-row.xa-row-running{background:linear-gradient(90deg,rgba(238,242,255,.45),transparent 35%)}.xa-dashboard-row.xa-row-queued{background:linear-gradient(90deg,rgba(255,251,235,.5),transparent 35%)}.xa-table-link{border:0;background:none;padding:0;color:#4f46e5;text-decoration:underline;text-underline-offset:2px;font:inherit;font-weight:700;cursor:pointer;text-align:left}.xa-status-pill{display:inline-flex;padding:3px 6px;border-radius:999px;background:#f3f4f6;white-space:nowrap;margin-top:4px}.xa-pill-running{background:#eef2ff;color:#3730a3}.xa-pill-queued{background:#fffbeb;color:#92400e}.xa-pill-completed{background:#ecfdf5;color:#065f46}.xa-pill-failed{background:#fef2f2;color:#991b1b}.xa-pill-needs_selection,.xa-pill-needs_product{background:#fffbeb;color:#92400e}.xa-empty-cell{text-align:center;color:#6b7280;padding:25px!important}.xa-activity{max-width:260px;line-height:1.35;word-break:break-word}.xa-progress-wrap{min-width:150px}.xa-progress-wrap.compact{min-width:0;margin-top:4px}.xa-progress-top{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:10px;margin-bottom:4px}.xa-progress-top strong{font-size:10px;white-space:nowrap}.xa-progress-sub{font-size:8px;color:#6366f1;max-width:145px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.xa-progress-track{height:7px;border-radius:999px;background:#e5e7eb;overflow:hidden}.xa-progress-track span{display:block;height:100%;border-radius:999px;background:#6366f1;transition:width .3s ease}.xa-progress-wrap.compact .xa-progress-top{display:none}.xa-progress-wrap.compact .xa-progress-track{height:4px}.xa-job-completed .xa-progress-track span{background:#10b981}.xa-heartbeat{font-size:9px;white-space:normal;line-height:1.3;color:#4b5563}.xa-heartbeat[data-kind="live"]{color:#047857}.xa-heartbeat[data-kind="warn"]{color:#92400e;font-weight:700}.xa-heartbeat[data-kind="bad"]{color:#b91c1c;font-weight:700}.xa-heartbeat[data-kind="ok"]{color:#047857}.xa-selected-progress{margin-top:10px;border:1px solid #c7d2fe;border-radius:10px;padding:10px;background:#f8faff}.xa-selected-progress-main{display:grid;grid-template-columns:180px minmax(0,1fr);gap:12px;align-items:center}.xa-selected-progress-main>div:first-child span{display:block;font-size:9px;color:#6b7280}.xa-selected-progress-main>div:first-child strong{display:block;font-size:18px;margin-top:1px}.xa-selected-progress-meta{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:9px;color:#4b5563}.xa-selected-progress-meta em{font-style:normal}.xa-selected-progress-meta em[data-kind="warn"]{color:#92400e;font-weight:700}.xa-selected-progress-meta em[data-kind="bad"]{color:#b91c1c;font-weight:700}.xa-selected-progress-meta em[data-kind="live"]{color:#047857}
       .xa-dashboard-btn{width:calc(100% - 12px);margin:6px;border:1px solid #c7d2fe;background:#eef2ff;color:#3730a3;border-radius:9px;padding:8px;text-align:left;font-size:11px;font-weight:800;cursor:pointer}.xa-dashboard-btn:hover{background:#e0e7ff}
       .xa-storage-global{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:9px;padding:9px 10px;border:1px solid #bbf7d0;border-radius:9px;background:#f0fdf4}.xa-storage-global>div:first-child strong{display:block;font-size:10px;color:#166534}.xa-storage-global>div:first-child span{display:block;font-size:8px;color:#4b5563;margin-top:2px}.xa-storage-global-status[data-kind="ok"]{color:#047857!important;font-weight:700}.xa-storage-global-status[data-kind="default"]{color:#4b5563!important;font-weight:700}.xa-storage-global button:disabled{opacity:.45;cursor:not-allowed}.xa-storage-card{border:1px solid #bbf7d0;border-radius:10px;padding:10px;margin-top:8px;background:#f7fff9}.xa-storage-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.xa-storage-head strong{display:block;font-size:12px}.xa-storage-head span{display:block;font-size:9px;color:#6b7280;margin-top:2px}.xa-decision-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:8px}.xa-decision-item{border:1px solid #e5e7eb;border-radius:8px;padding:7px 8px;background:#fafafa}.xa-decision-item span{display:block;font-size:8px;color:#6b7280;text-transform:uppercase;letter-spacing:.03em}.xa-decision-item strong{display:block;margin-top:2px;font-size:10px;word-break:break-word}.xa-knowledge-card{border:1px solid #dbeafe;border-radius:10px;padding:10px;margin-top:8px;background:#f8fbff}.xa-knowledge-title{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.xa-knowledge-title>div strong{display:block;font-size:12px}.xa-knowledge-title>div span{display:block;font-size:9px;color:#6b7280;margin-top:2px}.xa-knowledge-status{font-size:9px;border-radius:999px;padding:4px 7px;background:#f3f4f6;white-space:nowrap}.xa-knowledge-completed{background:#ecfdf5;color:#065f46}.xa-knowledge-review{background:#fffbeb;color:#92400e}.xa-knowledge-blocker{background:#fef2f2;color:#991b1b}.xa-knowledge-generating{background:#eef2ff;color:#3730a3}.xa-knowledge-failed{background:#fef2f2;color:#991b1b}.xa-knowledge-queued{background:#fffbeb;color:#92400e}.xa-knowledge-error{margin-top:7px;padding:7px;border-radius:7px;background:#fef2f2;color:#991b1b;font-size:10px}.xa-knowledge-preview{margin-top:9px;max-height:260px;overflow:auto;border-top:1px solid #e5e7eb;padding-top:7px;font-size:11px}.xa-knowledge-cell{display:flex;flex-direction:column;gap:2px;min-width:145px}.xa-knowledge-cell strong{font-size:9px}.xa-knowledge-cell small{font-size:8px;color:#6b7280;line-height:1.3}.xa-help-dot{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;margin-left:5px;border:1px solid #cbd5e1;border-radius:999px;color:#64748b;background:#fff;font-size:9px;font-weight:800;vertical-align:middle;cursor:help}.xa-help-dot:hover,.xa-help-dot:focus{border-color:#818cf8;color:#4338ca;background:#eef2ff;outline:none;box-shadow:0 0 0 2px rgba(99,102,241,.12)}.xa-floating-tooltip{position:fixed;z-index:2147483647;max-width:340px;padding:8px 10px;border-radius:8px;background:#111827;color:#fff;font-size:10px;line-height:1.45;font-weight:500;box-shadow:0 10px 30px rgba(15,23,42,.25);pointer-events:none;white-space:normal;word-break:normal}.xa-floating-tooltip:after{content:"";position:absolute;left:50%;transform:translateX(-50%);border:6px solid transparent}.xa-floating-tooltip[data-placement="bottom"]:after{top:-12px;border-bottom-color:#111827}.xa-floating-tooltip[data-placement="top"]:after{bottom:-12px;border-top-color:#111827}.xa-help-repo{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;margin:2px 0 14px;border:1px solid #c7d2fe;border-radius:10px;background:#eef2ff}.xa-help-repo>div{min-width:0}.xa-help-repo strong{display:block;font-size:12px;color:#312e81}.xa-help-repo span{display:block;margin-top:2px;color:#64748b;font-size:10px}.xa-help-repo a:not(.xa-help-repo-button){display:block;margin-top:5px;color:#4338ca;font-size:10px;overflow-wrap:anywhere}.xa-help-repo-button{display:inline-flex;align-items:center;flex:0 0 auto;border:1px solid #a5b4fc;background:#fff;color:#3730a3;border-radius:8px;padding:7px 10px;text-decoration:none!important;font-size:10px;font-weight:800;white-space:nowrap}.xa-decision-group{margin-top:9px}.xa-decision-group-title{font-size:10px;font-weight:850;color:#374151;margin:0 0 6px;text-transform:uppercase;letter-spacing:.04em}.xa-sme-field-card{margin:7px 0;padding:10px 11px;border:1px solid #e5e7eb;border-left:4px solid #64748b;border-radius:9px;background:#fff}.xa-sme-good{border-left-color:#16a34a;background:#f0fdf4}.xa-sme-bad{border-left-color:#dc2626;background:#fef2f2}.xa-sme-info{border-left-color:#3b82f6;background:#eff6ff}.xa-sme-gray{border-left-color:#94a3b8;background:#f8fafc}.xa-sme-field-head{display:flex;align-items:center;justify-content:space-between;gap:8px}.xa-sme-field-head strong{font-size:11px}.xa-correct-value{margin-top:7px;padding:7px 8px;border:1px solid rgba(148,163,184,.3);border-radius:7px;background:#fff}.xa-correct-value span{display:block;font-size:7.5px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:850}.xa-correct-value strong{display:block;margin-top:2px;font-size:12px}.xa-sme-why,.xa-sme-action,.xa-sme-detail,.xa-sme-correction{margin-top:6px;font-size:9.5px;line-height:1.4}.xa-sme-correction{padding:6px 7px;border-radius:7px;background:#fff1f2;color:#9f1239}.xa-sme-detail{color:#475569}.xa-sme-field-card .pill{display:inline-flex;border-radius:999px;padding:2px 6px;font-size:7.5px;font-weight:850;border:1px solid #d1d5db}.xa-sme-field-card .pill.bad{background:#fee2e2;border-color:#fecaca;color:#991b1b}.xa-sme-field-card .pill.info{background:#dbeafe;border-color:#bfdbfe;color:#1d4ed8}.xa-decision-item small{display:block;margin-top:4px;color:#6b7280;font-size:8.5px;line-height:1.35;font-weight:500}.xa-decision-empty{padding:9px;border:1px dashed #d1d5db;border-radius:8px;color:#6b7280;font-size:10px}.xa-pipeline-row{grid-template-columns:22px 150px minmax(0,1fr)}.xa-pipeline-action{border:1px solid #c7d2fe;background:#fff;color:#3730a3;border-radius:7px;padding:5px 8px;font-size:9px;font-weight:750;cursor:pointer;white-space:nowrap}.xa-pipeline-action:disabled{opacity:.45;cursor:not-allowed}.xa-knowledge-decision{margin-top:7px;padding:7px 8px;border-radius:7px;background:#f8fafc;color:#475569;font-size:9.5px;line-height:1.4}.xa-reuse-summary{margin:10px 0 8px;border:1px solid #dbe4f0;border-radius:10px;background:#fbfdff;overflow:hidden}.xa-reuse-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 10px;border-bottom:1px solid #e5e7eb}.xa-reuse-head>div:first-child strong{display:block;font-size:10.5px;color:#1f2937}.xa-reuse-head>div:first-child span{display:block;font-size:8.5px;color:#6b7280;margin-top:2px}.xa-reuse-actions{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}.xa-reuse-actions button{padding:5px 8px;border:1px solid #a5b4fc;background:#eef2ff;border-radius:7px;font-size:8.5px;font-weight:800;color:#3730a3;cursor:pointer}.xa-reuse-actions button:hover{border-color:#818cf8;color:#4338ca}.xa-reuse-actions button:disabled{opacity:.42;cursor:not-allowed}.xa-reuse-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.xa-reuse-item{padding:8px 10px;min-width:0;border-right:1px solid #eef2f7}.xa-reuse-item:last-child{border-right:0}.xa-reuse-item>span{display:block;font-size:8px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:800}.xa-reuse-item>strong{display:block;font-size:10px;margin-top:2px;color:#334155}.xa-reuse-item>small{display:block;font-size:8.5px;color:#64748b;margin-top:1px}.xa-reuse-item>em{display:block;font-style:normal;font-size:8.2px;line-height:1.35;color:#64748b;margin-top:3px;max-height:35px;overflow:hidden}.xa-reuse-item.ok>strong{color:#047857}.xa-reuse-item.run>strong{color:#4338ca}.xa-reuse-item.bad>strong{color:#b91c1c}.xa-reuse-item-head{display:flex;align-items:center;justify-content:space-between;gap:8px}.xa-reuse-item-actions{margin-top:7px;padding-top:6px;border-top:1px solid #eef2f7}.xa-reuse-item-actions button{width:100%;border:1px solid #a5b4fc;background:#eef2ff;color:#3730a3;border-radius:7px;padding:6px 8px;font-size:8.5px;font-weight:800;cursor:pointer}.xa-reuse-item-actions button:hover{background:#eef2ff;border-color:#818cf8}.xa-reuse-item-actions button:disabled{opacity:.42;cursor:not-allowed;background:#f8fafc}.xa-job-running .xa-job-icon,.xa-pipeline-active .xa-pipeline-icon{display:inline-block;animation:xa-spin 1s linear infinite}@keyframes xa-spin{to{transform:rotate(360deg)}}.xa-source-badge{display:inline-flex;align-items:center;border-radius:999px;padding:2px 6px;font-size:7.5px;font-weight:850;letter-spacing:.03em;white-space:nowrap}.xa-source-badge.reused{background:#dcfce7;color:#166534}.xa-source-badge.new{background:#dbeafe;color:#1d4ed8}.xa-source-badge.checking{background:#ede9fe;color:#6d28d9}.xa-source-badge.failed{background:#fee2e2;color:#b91c1c}.xa-source-badge.pending{background:#f3f4f6;color:#6b7280}.xa-prior-result{display:block!important;margin-top:5px!important;padding-top:5px;border-top:1px dashed #dbe4f0;color:#7c3aed!important;font-size:8px!important;line-height:1.35}.xa-decision-list{display:flex;flex-direction:column;gap:6px}.xa-decision-row{width:100%;box-sizing:border-box;border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:9px 11px}.xa-decision-row.ticket{border-left:3px solid #818cf8}.xa-decision-row.knowledge{border-left:3px solid #a7f3d0}.xa-decision-row-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.xa-decision-row-head>span{font-size:8.5px;color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:.03em}.xa-decision-row-head>strong{font-size:10.5px;color:#111827;text-align:right}.xa-decision-row-explanation{margin-top:6px;padding-top:6px;border-top:1px solid #f1f5f9;color:#526071;font-size:9.5px;line-height:1.45;max-width:none}@media(max-width:900px){.xa-reuse-head{align-items:flex-start;flex-direction:column}.xa-reuse-grid{grid-template-columns:1fr}.xa-reuse-item{border-right:0;border-bottom:1px solid #eef2f7}.xa-reuse-item:last-child{border-bottom:0}}.xa-product-mode{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:9px;background:#fafafa}.xa-product-mode>div strong{display:block;font-size:11px}.xa-product-mode>div small{display:block;margin-top:2px;color:#6b7280;font-size:9px}.xa-product-mode select{border:1px solid #cbd5e1;border-radius:7px;padding:6px 8px;background:#fff;font-size:10px;color:#334155}.xa-product-card{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px;padding:9px 10px;border:1px solid #dbeafe;border-radius:9px;background:#f8fbff}.xa-product-card.needs{border-color:#fde68a;background:#fffbeb}.xa-product-card>div{min-width:0}.xa-product-card span{display:block;font-size:8px;color:#64748b;text-transform:uppercase;font-weight:800;letter-spacing:.04em}.xa-product-card strong{display:block;font-size:12px;margin-top:1px}.xa-product-card small{display:block;font-size:8.5px;color:#64748b;margin-top:2px;line-height:1.3}.xa-product-card button{flex:0 0 auto;border:1px solid #a5b4fc;background:#fff;color:#3730a3;border-radius:7px;padding:6px 8px;font-size:9px;font-weight:800;cursor:pointer}.xa-product-card button:disabled{opacity:.45;cursor:not-allowed}.xa-product-locked{display:inline-flex;align-items:center;border-radius:999px;padding:3px 7px;background:#f3f4f6;color:#64748b;font-size:8.5px;font-weight:750;white-space:nowrap;cursor:help}.xa-product-reason{padding:8px 9px;margin-bottom:8px;border:1px solid #e5e7eb;border-radius:8px;background:#f8fafc;color:#475569;font-size:10px;line-height:1.4}.xa-product-options{display:grid;grid-template-columns:1fr;gap:8px}.xa-product-option{position:relative;text-align:left;border:1px solid #e5e7eb;background:#fff;border-radius:9px;padding:10px 11px;cursor:pointer}.xa-product-option:hover{border-color:#818cf8;background:#f8faff}.xa-product-option.suggested{border-color:#a5b4fc;background:#eef2ff}.xa-product-option strong{display:block;font-size:12px}.xa-product-option span{display:block;margin-top:3px;color:#64748b;font-size:9px;line-height:1.35}.xa-product-option em{position:absolute;right:8px;top:8px;font-style:normal;font-size:8px;font-weight:800;color:#4338ca;background:#fff;border:1px solid #c7d2fe;border-radius:999px;padding:2px 6px}.xa-help-modal{width:min(860px,96vw)}.xa-help-body{padding:8px 4px 2px;font-size:11px;line-height:1.55}.xa-help-body h3{margin:14px 0 5px;font-size:13px}.xa-help-body p{margin:5px 0}.xa-help-body ul{margin:5px 0 5px 20px;padding:0}.xa-help-body li{margin:4px 0}
       .xa-sfdc-card{border:1px solid #e5e7eb;border-radius:9px;padding:9px;margin-top:7px;background:#fafafa}.xa-sfdc-card.selected{border-color:#818cf8;background:#eef2ff}.xa-sfdc-title{display:flex;justify-content:space-between;gap:8px;align-items:center}.xa-selected-badge{font-size:9px;border-radius:999px;padding:3px 6px;background:#dcfce7;color:#166534}.xa-sfdc-detail-text{margin-top:5px;font-size:10px;line-height:1.45;color:#4b5563;word-break:break-word}.xa-sfdc-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:7px}.xa-sfdc-actions a{color:#4f46e5;text-decoration:underline;font-size:10px}.xa-sfdc-actions span{font-size:10px;color:#6b7280}.xa-sfdc-actions button{border:1px solid #c7d2fe;background:#fff;color:#3730a3;border-radius:7px;padding:5px 8px;font-size:10px;font-weight:700;cursor:pointer}.xa-manual-sfdc-inline{margin-top:7px;padding:11px 12px;border:1px solid #f59e0b;border-left:5px solid #d97706;border-radius:9px;background:#fffbeb}.xa-manual-sfdc-inline-head strong{display:block;font-size:11px;color:#92400e}.xa-manual-sfdc-inline-head span{display:block;margin-top:2px;font-size:9.5px;line-height:1.4;color:#6b4f12}.xa-manual-sfdc-inline-row{display:grid;grid-template-columns:minmax(180px,260px) auto auto;gap:7px;align-items:center;margin-top:9px}.xa-manual-sfdc-inline-row button{border:1px solid #c7d2fe;background:#fff;color:#3730a3;border-radius:8px;padding:9px 10px;font-size:10px;font-weight:800;cursor:pointer}.xa-manual-sfdc-inline-row #xa-inline-sfdc-submit{background:#4f46e5;color:#fff;border-color:#4f46e5}.xa-manual-sfdc-label{display:block;margin:12px 0 5px;font-size:11px;font-weight:800;color:#374151}.xa-manual-sfdc-input{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:9px;padding:10px 11px;font:14px ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}.xa-manual-sfdc-error{min-height:18px;margin-top:5px;color:#b91c1c;font-size:11px}.xa-manual-sfdc-note{margin-top:6px;padding:8px 10px;border-radius:8px;background:#f8fafc;color:#475569;font-size:11px;line-height:1.45}.xa-manual-sfdc-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}.xa-manual-sfdc-actions button{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:8px;padding:7px 10px;font-weight:750;cursor:pointer}.xa-manual-sfdc-actions #xa-manual-sfdc-submit{background:#4f46e5;color:#fff;border-color:#4f46e5}
@@ -12927,8 +15132,8 @@ ${bodyHtml}
     panel.innerHTML = `
       <div class="xa-head">
         <div>
-          <div class="xa-title">XSUP Retrospective Auditor</div>
-          <div class="xa-sub">Initial Team Release · XDR/XSIAM · XSOAR · Cortex Cloud · <span id="xsup-auditor-worker-summary">${state.concurrency} XSUP/TACO workers · ${state.knowledgeConcurrency} knowledge workers · Case Chat max ${state.caseChatGenerationLimit}</span><span id="xsup-auditor-elapsed"></span></div>
+          <div class="xa-title">XSUP Auditor & KCS Generator</div>
+          <div class="xa-sub">${PUBLIC_RELEASE_LABEL} · XDR/XSIAM · XSOAR · Cortex Cloud · <span id="xsup-auditor-worker-summary">${state.concurrency} XSUP/TACO workers · ${state.knowledgeConcurrency} knowledge workers · Case Chat max ${state.caseChatGenerationLimit}</span><span id="xsup-auditor-elapsed"></span></div>
         </div>
         <div class="xa-head-actions">
           <button id="xsup-auditor-minimize" class="xa-icon" title="Minimize">—</button>
@@ -12939,11 +15144,11 @@ ${bodyHtml}
 
       <div class="xa-input-row">
         <textarea id="xsup-auditor-input" placeholder="Paste jobs, one per line&#10;XSUP-12345&#10;04001234&#10;XSUP-12345 / 04001234"></textarea>
-        <button id="xsup-auditor-run">Run Audit(s)</button>
-        <button id="xsup-auditor-direct-kcs" title="Generate only the KCS-family artifact. Existing Salesforce KCS content is checked to recommend CREATE vs UPDATE. If UPDATE is recommended, the reviewer may still choose a separate new KCS; the existing KCS remains referenced. Admin Guide, Runbook and other secondary artifacts are skipped.">Generate KCS</button>
+        <button id="xsup-auditor-run" title="Load jobs into the dashboard without starting TACO, Audit or Knowledge generation.">Load XSUPs</button>
+        <button id="xsup-auditor-direct-kcs" title="Load jobs into the dashboard preselected as KCS-only. Nothing starts until Run Selected is clicked.">Load as KCS Only</button>
         <button id="xsup-auditor-stop" disabled>Stop All</button>
       </div>
-      <div class="xa-input-help">Use XSUP IDs, SFDC-only cases, or paired XSUP / SFDC input. Supplied SFDC is used directly; linked XSUP is discovered when possible. Generate KCS creates only KCS-family output and checks existing Salesforce KCS content before recommending CREATE vs UPDATE. When an update is recommended, the reviewer can still choose Create New KCS Anyway; the new draft keeps the related existing KCS referenced. If automatic SFDC mapping fails, use Enter SFDC in the item instead of restarting. XSUP/TACO parallelism is selectable below; Case Chat generation remains capped at 2.</div>
+      <div class="xa-input-help">Use XSUP IDs, SFDC-only cases, or paired XSUP / SFDC input. Load is read-only: it stages jobs in the dashboard and does not start TACO, Audit or Knowledge generation. Configure Workflow and Run Mode per XSUP, then click Run Selected. Automatic mode reuses only results that remain valid for current evidence; fresh TACO analysis is an explicit Run Mode when needed. XSUP/TACO parallelism is selectable below; Case Chat generation remains capped at 2.</div>
       <div class="xa-toggle-row">
         <label class="xa-auto-download">
           <input id="xsup-auditor-auto-download" type="checkbox" checked>
@@ -12951,7 +15156,7 @@ ${bodyHtml}
         </label>
         <label class="xa-auto-download">
           <input id="xsup-auditor-auto-knowledge" type="checkbox" checked>
-          <span><strong>Auto-generate recommended knowledge drafts</strong><small>Uses the protected Case Chat queue. With Browser Downloads, generation completion and disk-save confirmation are shown separately.</small></span>
+          <span><strong>Default: include recommended Knowledge</strong><small>Sets the default workflow for newly loaded XSUPs. The dashboard can override each XSUP to Audit + Knowledge, Audit only, KCS only or Skip before execution.</small></span>
         </label>
       </div>
       <div class="xa-product-mode">
@@ -12988,7 +15193,7 @@ ${bodyHtml}
           <button id="xsup-auditor-dashboard-btn" class="xa-dashboard-btn">▦ Live Dashboard</button>
           <div style="padding:2px 8px 4px;color:#6b7280;font-size:9px;line-height:1.35">Click any XSUP to view its progress, report, comment and references.</div>
           <div id="xsup-auditor-job-list" class="xa-job-list">
-            <div class="xa-job-empty">Paste one or more XSUP IDs above and click Run Audit(s).</div>
+            <div class="xa-job-empty">Paste one or more XSUP/SFDC jobs above and click Load XSUPs.</div>
           </div>
           <div class="xa-actions" style="padding:0 8px 8px;margin-top:2px">
             <button id="xsup-auditor-copy-all-comments" title="Copies the review paste comments for every completed ticket in this batch.">Copy All Review Comments</button>
@@ -13036,6 +15241,7 @@ ${bodyHtml}
             <div id="xsup-auditor-output" class="xa-report-empty"><div class="xa-report-placeholder">Final audit report will appear here...</div></div>
             <div class="xa-actions">
               <button id="xsup-auditor-copy">Copy Audit Report</button>
+              <button id="xsup-auditor-copy-audit-prompt" disabled title="Copies the exact fully materialized Audit prompt used by the automatic path.">Copy Audit Prompt</button>
               <button id="xsup-auditor-download-selected" disabled title="Downloads the selected XSUP audit, or writes it to the selected folder.">Download Audit Report</button>
             </div>
 
@@ -13118,8 +15324,8 @@ ${bodyHtml}
 
     document.getElementById("xsup-auditor-choose-folder").onclick = chooseSaveFolder;
 
-    document.getElementById("xsup-auditor-run").onclick = runAudit;
-    document.getElementById("xsup-auditor-direct-kcs").onclick = runDirectKCS;
+    document.getElementById("xsup-auditor-run").onclick = () => loadJobsFromInput();
+    document.getElementById("xsup-auditor-direct-kcs").onclick = () => loadJobsFromInput({executionPlan:"kcs_only"});
     document.getElementById("xsup-auditor-stop").onclick = stopAudit;
     document.getElementById("xsup-auditor-minimize").onclick = minimizePanel;
     document.getElementById("xsup-auditor-maximize").onclick = toggleMaximize;
@@ -13127,6 +15333,7 @@ ${bodyHtml}
 
     document.getElementById("xsup-auditor-close").onclick = () => {
       if (state.running || state.activeCount) stopAudit();
+      clearAllStagedPromptAutoPolls();
       clearInterval(state.elapsedTimer);
       closeSFDCChooser();
       closeProductChooser();
@@ -13150,6 +15357,14 @@ ${bodyHtml}
       if (!txt) return;
       await copyWithFeedback(e.currentTarget, txt);
       setStatus(`${job.xsup} report copied.`, "ok");
+    };
+
+    document.getElementById("xsup-auditor-copy-audit-prompt").onclick = async (e) => {
+      const job = getSelectedJob();
+      const txt = job?.lastPrompt || "";
+      if (!txt) return;
+      await copyWithFeedback(e.currentTarget, txt);
+      setStatus(`${job.xsup} Audit prompt copied.`, "ok");
     };
 
     document.getElementById("xsup-auditor-copy-comment").onclick = async (e) => {
@@ -13187,7 +15402,7 @@ ${bodyHtml}
     document.getElementById("xsup-auditor-debug").onclick = () => void downloadDebug();
 
     document.getElementById("xsup-auditor-input").addEventListener("keydown", e => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") runAudit();
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") loadJobsFromInput();
     });
   }
 

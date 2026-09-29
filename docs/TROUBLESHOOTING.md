@@ -1,380 +1,205 @@
 # Troubleshooting
 
-Use this order:
+Start with:
 
 1. Live Dashboard
-2. Analysis & Reuse Status
-3. Execution Pipeline
-4. Knowledge Artifact status
+2. selected XSUP detail
+3. Analysis & Reuse Status
+4. Execution Pipeline
 5. TACopilot → Case → TACO Analysis → Case Chat
 
----
+## Nothing starts after entering IDs
 
-# Auditor panel disappeared
+The current v1.0 workflow is staged.
 
-Browser refresh removes the injected UI.
+1. Click **Load XSUPs** or **Load as KCS Only**.
+2. Configure Workflow and Run Mode.
+3. Check the rows to run.
+4. Click **Run Selected**.
 
-Run the Snippet again.
+Loading alone intentionally does not start TACO/Audit/Knowledge generation.
 
----
-# Bookmark does not open from a case page
+## A row says Choose SFDC
 
-The current release supports any authenticated page under:
+Select the correct linked Salesforce case.
 
-```text
-https://taco.paloaltonetworks.com:3009/taco/
-```
+Only that row should wait.
 
-including `/taco/pilot/` and `/taco/case/<SFDC>`. If it still behaves like Pilot-only, replace the installed bookmark: self-contained bookmarks keep the old embedded source and do not auto-update when the GitHub installer file changes.
+If automatic mapping is unavailable, use the manual SFDC fallback when offered.
 
-Verify the exact host, port and `/taco` path; other origins and lookalike paths are intentionally rejected.
+## Why are more than two XSUP/TACO rows active?
 
----
+XSUP/TACO worker parallelism is selectable: 2, 3, 5 or 10.
 
+This does **not** mean more than two Case Chat generations are running. Case Chat generation remains capped at 2.
 
-# Only two XSUPs are running
+## Knowledge is queued while other work continues
 
-The default **Parallel XSUP / TACO processing** value is 2. You can select 2, 3, 5 or 10 for independent evidence/TACO processing.
+Expected.
 
-This does not raise the shared Case Chat generation limit, which remains 2.
+Knowledge uses independent workers and the shared Case Chat generation cap.
 
----
+## Automatic mode reused an old result
 
-# Knowledge is queued
+Automatic mode is designed to reuse a compatible result when it remains valid for the current source evidence.
 
-Two Knowledge workers are available, but Audit and Knowledge share a maximum of two active mutating Case Chat generations. A Knowledge job can therefore queue while those slots are occupied.
+If you deliberately need fresh output, select the appropriate **Regenerate** Run Mode before running.
 
-XSUP/TACO workers can continue independent non-generation work.
+## I selected Regenerate Audit but it reused an old Audit
 
----
+That is not expected in this release.
 
-# Audit says 100% but XSUP is not green
+Explicit Regenerate Audit must bypass existing Case Chat reuse for the Audit stage.
 
-Check Knowledge.
+Capture:
 
-Knowledge may still be:
+- XSUP
+- selected Workflow
+- selected Run Mode
+- visible Case Chat ID/date
+- expected vs actual behavior
 
-- checking reuse
-- queued
-- enriching
-- quality reviewing
-- repairing
+and report it to the maintainer through an approved internal channel.
 
-Overall green should appear only when required workflow is complete/skipped.
+## I selected Regenerate Knowledge/KCS but it reused an old Knowledge result
 
----
+That is not expected.
 
-# Product confirmation required
+Explicit Regenerate Knowledge/KCS must force a fresh selected-stage Case Chat.
 
-Auto detection was not high-confidence.
+## When should I regenerate TACO?
 
-Select:
+Use an explicit **Regenerate TACO Analysis + ...** Run Mode only when a fresh source analysis is intended.
 
-- XDR/XSIAM
-- XSOAR
-- Cortex Cloud
+Automatic mode can reuse a usable TACO analysis while still preventing stale downstream Audit/Knowledge reuse when newer Jira/SFDC evidence exists.
 
-Only that XSUP waits.
+## Audit completed but Knowledge is still running
 
----
+Normal for **Audit + Knowledge**.
 
-# Multiple SFDC matches
+The Audit stage can finish before downstream Knowledge finishes.
 
-Choose the actual linked case.
+## Knowledge shows REVIEW
 
-The tool intentionally does not guess.
+The draft is usable, but one or more named items require validation.
 
----
+Resolve the inline review/currentness/source/scope/runnable-content item before publication.
 
-# TACO shows REUSED EXISTING
+## Knowledge shows BLOCKER / NOT READY
 
-A usable current TACO exists.
+A usable draft may still exist, but a material issue remains.
 
-This is normal.
+Do not publish or treat the draft as authoritative until the blocker is resolved.
 
----
+BLOCKER is not necessarily the same as generation failure.
 
-# Audit shows REUSED EXISTING
+## Dashboard status and downloaded artifact wording differ
 
-A compatible current Retrospective Case Chat exists.
+The v1.0 pilot can still have minor summary-status propagation differences in edge cases.
 
-This avoids duplicate AI work.
+For publication/reuse decisions, use:
 
----
+1. the downloaded Knowledge artifact's detailed quality state;
+2. inline REVIEW/BLOCKER items;
+3. Source References;
+4. required SME/Cortex Brain validation.
 
-# Knowledge shows REUSED EXISTING
+Do not publish based only on a dashboard color/status.
 
-A compatible current Knowledge artifact exists.
+## CREATE KCS was recommended even though related knowledge exists
 
-Use **Regenerate KCS / Regenerate Knowledge** if you intentionally want it rebuilt through the latest Knowledge quality pipeline.
+Related knowledge is not always the same as an existing Salesforce KCS.
 
----
+If a specific Salesforce KCS is identified with meaningful overlap, the workflow should compare coverage and apply mergeability logic.
 
-# Regenerate Audit is disabled
+If the article appears mergeable but CREATE was still recommended without a distinct-scope explanation, flag it for reviewer feedback.
 
-Wait until active/conflicting work is finished and current case/TACO/evidence is ready.
+## Existing Salesforce KCS link looks wrong
 
----
+The current release canonicalizes Salesforce Knowledge links.
 
-# Regenerate Knowledge is disabled
+A valid KCS link should point to:
 
-For a normal retrospective it requires:
+`.../lightning/r/Knowledge__kav/<article-id>/view`
 
-- completed Audit
-- a Knowledge action/artifact type
-- no conflicting active work
+If a KCS link includes Markdown residue or points to Jira/Confluence/vendor docs instead, report it as a defect.
 
-For **Direct Generate KCS**, a retrospective Audit is not required. Direct KCS regeneration uses current TACO/original evidence and the KCS-family artifact state.
+## Why is normal observable behavior marked BLOCKER?
 
----
-# Direct KCS created an Update Proposal
+The safety classifier is intentionally conservative in the v1.0 pilot and may occasionally over-review a statement supported mainly by internal Engineering/case evidence.
 
-This is valid behavior in **Direct Generate KCS**.
+The article is preserved so an SME can validate/generalize it. This is preferable to silently treating internal or release-specific behavior as a public guarantee.
 
-Direct KCS starts with `CREATE KCS / KCS_DRAFT` intent, inspects actual Salesforce KCS content, and can legitimately reconcile to `UPDATE EXISTING KCS / KCS_UPDATE` when a material same-scope match is established. A valid KCS Draft **or** a valid KCS Update Proposal satisfies the required Direct KCS primary.
+## Public article contains deep implementation details
 
-Normal retrospective mode remains different: the validated Audit owns the Knowledge destination and downstream generation must not silently reroute an Audit-selected CREATE into UPDATE.
+Check whether the detail is also available in **Internal Notes — TAC Only** and whether maintained public authority supports the public wording.
 
-If an installed bookmark behaves differently from the current repository documentation, replace/reinstall the bookmark because self-contained bookmarks keep the source bytes that were embedded when they were installed.
+If privileged/backend mechanics remain in the public body without appropriate authority, treat the item as needing review before publication.
 
----
+## How do I validate a KCS with Cortex Brain?
 
-# Knowledge is DRAFTABLE
+Open the downloaded KCS HTML and scroll to the very bottom.
 
-This is not necessarily a failure.
+Under **SME Validation Tools**, use:
 
-It means the artifact is useful but has named material validation items.
+- **Copy for Cortex Brain**, or
+- **Download for Cortex Brain**.
 
-Review the inline **REVIEW / REVIEW CURRENTNESS** callouts beside the affected claims/references and resolve the stated required action.
+The export is marked **MANDATORY VALIDATION — NOT PUBLICATION READY** and contains the clean KCS plus `[R#]`/Source References.
 
----
+## Why doesn't the Cortex Brain export show XSUP Auditor REVIEW/BLOCKER callouts?
 
-# Knowledge is NOT READY
+By design.
 
-The artifact failed an important quality/safety condition.
+Cortex Brain receives the clean proposed KCS and sources so it can independently validate the technical content rather than merely echoing the Auditor's judgment.
 
-Review:
+## Case Chat returns a transient/service error
 
-- the header readiness/publication state
-- inline **REVIEW / REVIEW CURRENTNESS / BLOCKER** callouts
-- Source References and source-state indicators
-- the affected claim/reference
-- the stated What / Why / required action
-- Case Chat result only as diagnostic context, not as the authoritative underlying source
+Check native TACopilot/Case Chat directly.
 
----
+If native Case Chat works but the tool fails repeatedly, capture the visible request/stage error and report it. Do not assume a generic service-maintenance message proves all native Case Chat functionality is unavailable.
 
-# "raw internal provenance marker is visible"
-
-The final article still contains one of:
-
-```text
-[inference]
-[from case data]
-[derived analysis]
-```
-
-These are internal investigation markers, not final Knowledge content.
-
-The latest Knowledge pipeline attempts to resolve them automatically.
-
-If the marker remains after the repair pass, the artifact stays NOT READY.
-
-Do not simply remove the word `[inference]` manually while leaving the claim unchanged unless the claim is independently supported.
-
----
-
-# "unresolved internal placeholder/token is visible"
-
-The final artifact still contains something like:
-
-```text
-@@TOKEN@@
-```
-
-This is treated as a blocking rendering/content defect.
-
----
-
-# "unresolved editorial placeholder is visible"
-
-The final article still contains a writing placeholder such as:
-
-```text
-TODO
-TBD
-[insert ...]
-[placeholder ...]
-```
-
-The article is not publication-ready. When a usable draft exists, it is preserved and can still be downloaded for review.
-
----
-
-# Missing required section
-
-The artifact type has deterministic required headings.
-
-For a KCS Draft, required sections include:
-
-- Symptoms / Error
-- Cause
-- How to Check
-- How to Confirm
-- Resolution / Fix
-- Source References
-
-The automatic repair pass may try to restore a missing section without inventing unsupported facts.
-
----
-
-# Source References problem
-
-The final article must identify underlying supporting sources.
-
-A Source References section that contains only:
-
-```text
-TACO
-```
-
-or:
-
-```text
-Case Chat
-```
-
-is insufficient.
-
-Those are synthesis mechanisms rather than the underlying evidence.
-
----
-
-# Search Keywords problem
-
-A reusable KCS Search Keywords section must not contain the originating:
-
-- XSUP ID
-- SFDC case ID
-
-Use symptoms/errors/features instead.
-
----
-
-# Automatic repair failed
-
-The workflow allows only one evidence-bounded repair pass.
-
-If the repaired artifact still fails:
-
-```text
-NOT READY
-```
-
-Review the underlying evidence or regenerate after correcting the real source problem.
-
----
-
-# Quality reviewer returned FAIL
-
-A substantive quality FAIL is not automatically treated as a formatting problem.
-
-Investigate why the Knowledge reviewer considered the artifact unsafe/inadequate.
-
----
-
-# I only want another copy of the report
-
-Rerun normally and let Smart Reuse recover current results.
-
-Do not use Re-analyze All just for another download.
-
----
-
-# Browser was refreshed
-
-Run the Snippet again.
-
-Then either:
-
-- rerun XSUP and use Smart Reuse
-- Restore Session
-
----
-
-# Stop All clicked, but Case Chat still runs
+## Stop All was clicked but TACopilot still shows a task running
 
 Possible.
 
-Stop All controls the browser-side Auditor.
+Stop All cancels the Auditor's local queues/polling/requests as far as possible. A server-side request already accepted may continue.
 
-A server-side task already accepted may continue.
+## Browser refresh removed the Auditor panel
 
----
+Run the bookmark/snippet again.
 
-# Console shows CSP/source-map errors
+Then either:
 
-Not every browser console error belongs to the Auditor.
+- reload the XSUPs and allow Automatic reuse to recover compatible server-side results, or
+- restore a saved session if you used Save Session.
 
-Correlate:
+## Result looks technically wrong
 
-- URL
-- timestamp
-- request
-- Auditor activity
-
-Do not bypass corporate CSP.
-
----
-
-# Result looks technically wrong
-
-Do not apply it.
+Do not apply/publish it.
 
 Verify:
 
-1. XSUP/SFDC mapping
-2. product
-3. TACO conclusion
-4. original Engineering evidence
-5. original SFDC evidence
-6. Audit decision
-7. inline REVIEW / REVIEW CURRENTNESS / BLOCKER callouts and Source References
+1. correct XSUP/SFDC
+2. correct product
+3. current TACO
+4. original Jira/Engineering evidence
+5. original Salesforce evidence
+6. existing KCS/docs
+7. downloaded artifact review/blocker details
+8. Cortex Brain/SME validation when KCS is involved
 
-Then choose a targeted Regenerate action only when appropriate.
+## Reporting a tool problem
 
----
+Provide the maintainer, through an approved internal channel, with:
 
-# Bookmark does not run
+- XSUP
+- selected Workflow
+- selected Run Mode
+- expected behavior
+- actual behavior
+- visible stage/status
+- relevant Case Chat ID/date when safe
+- sanitized error/debug information if required
 
-1. Confirm the simple bookmarklet test works on the TACopilot page.
-2. Confirm the bookmark URL still starts with `javascript:`.
-3. Confirm TACopilot is the active page when the bookmark is clicked.
-4. If the installer drag operation fails, use **Copy bookmark URL** and create the bookmark manually.
-5. If managed-browser policy blocks bookmark execution, use the approved DevTools Snippet method instead. Do not bypass corporate controls.
-
-# Generate KCS does not show a retrospective Audit
-
-Expected behavior.
-
-Direct KCS intentionally skips retrospective eligibility and Support-owned field review. It should show the retrospective stage as skipped/not applicable and proceed to the KCS quality pipeline.
-
-# Independent quality validation is unavailable
-
-Transient Case Chat request failures can be retried/recovered by the shared reliability layer.
-
-If independent quality validation still cannot complete but an enriched draft exists:
-
-- the usable draft is preserved;
-- the internal quality state can show **`VALIDATION UNAVAILABLE`**;
-- the artifact is kept in a conservative review-required state;
-- the validation notice explains that independent quality validation was unavailable;
-- this is an execution-state warning, not proof that the article received a substantive AI quality `FAIL`.
-
-Re-run the Knowledge workflow or complete the required validation manually before publication.
-
-# NOT READY draft can still be downloaded
-
-Expected behavior when a usable artifact exists.
-
-NOT READY means **blocked for publication**, not **discard the draft**. The draft remains available so the reviewer can resolve the highlighted issues.
+Do not put customer-sensitive diagnostics into an unapproved GitHub issue.

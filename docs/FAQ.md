@@ -1,66 +1,22 @@
 # FAQ
 
-## What is XSUP Auditor & KCS Generator?
+## Is this production automation or an internal pilot?
 
-A self-contained browser tool/bookmarklet (with a Chrome DevTools Snippet fallback) that coordinates TACopilot, TACO Analysis, Jira/SFDC evidence and Case Chat to help reviewers complete product-specific XSUP retrospective reviews and generate reusable Knowledge drafts.
+This is the **v1.0 Initial Team Release**, intended for internal team use and feedback.
 
----
+The core Audit/KCS workflow is ready for use, but minor UI/status and review-classification refinements may continue.
 
-## Is the Auditor itself the AI?
-
-No.
-
-The JavaScript is the workflow/orchestration layer.
-
-TACO and Case Chat perform AI analysis.
-
-The Auditor controls:
-
-- data collection
-- product policy
-- source/evidence boundaries
-- reuse
-- prompts
-- status
-- validation
-- Knowledge quality gates
-- downloads
-
----
-
-## Where is Case Chat?
-
-**TACopilot → Case → TACO Analysis → Case Chat**
-
-The Auditor uses it automatically.
-
----
-
-## Does it update Jira/SFDC automatically?
+## Does the tool modify Jira or Salesforce automatically?
 
 No.
 
-It recommends the Support action.
+It generates decision-support output, Review Paste content and Knowledge drafts/proposals. A human remains responsible for any ticket change or publication action.
 
-A reviewer performs approved changes through the normal workflow.
-
----
-
-## Does it automatically post the Review Paste Comment?
+## Does it automatically publish KCS?
 
 No.
 
-It creates copyable text only.
-
----
-
-## Does it automatically publish KCS/docs?
-
-No.
-
-All Knowledge is a draft/proposal for human review.
-
----
+Generated Knowledge is always a draft/proposal for human review.
 
 ## What products are supported?
 
@@ -68,447 +24,118 @@ All Knowledge is a draft/proposal for human review.
 - XSOAR
 - Cortex Cloud
 
----
+See [Product Policies](PRODUCT_POLICIES.md).
 
-## Why one Snippet instead of three?
+## What is the current start/run workflow?
 
-The common workflow is the same.
+1. **Load XSUPs** or **Load as KCS Only**.
+2. Choose each row's **Workflow** and **Run Mode**.
+3. Select the rows.
+4. Click **Run Selected**.
 
-Only the product-specific trigger and applicable fields differ.
+Loading alone does not start TACO, Audit or Knowledge generation.
 
-A shared engine makes behavior such as TACO freshness, Smart Reuse, Knowledge quality and UI status consistent.
+## What does Automatic — reuse valid results do?
 
----
+It reuses TACO/Audit/Knowledge only when the result is compatible and still valid for the current source evidence.
 
-## How is product detected?
+Newer Jira/SFDC evidence prevents stale downstream reuse.
 
-The Auditor prefers stronger structured metadata from the case/TACO context.
-
-High confidence continues automatically.
-
-Ambiguous/low confidence pauses only that XSUP.
-
----
-
-## Can I select product manually?
+## Does Regenerate really create a new Case Chat?
 
 Yes.
 
-Use:
+Explicit **Regenerate Audit**, **Regenerate Knowledge**, **Regenerate Audit + Knowledge**, and **Regenerate KCS** bypass existing Case Chat reuse for the selected stage.
 
-**Ask me for every XSUP**
+Automatic mode is the path that may reuse compatible results.
 
-or:
+## What is Regenerate TACO Analysis + ...?
 
-**Change Product & Re-run Review**
+It explicitly creates a fresh TACO analysis and then regenerates the selected downstream Audit/Knowledge/KCS stages.
 
----
+Use it only when a full source re-analysis is intended.
 
-## How many XSUPs can run simultaneously?
+## How many XSUPs can run at once?
 
-XSUP/TACO concurrency defaults to **2** and can be selected as **2, 3, 5 or 10**. This controls independent case/evidence/TACO work.
+XSUP/TACO worker parallelism is selectable:
 
-Mutating Case Chat generation remains capped at **2** across Audit and Knowledge.
+- 2
+- 3
+- 5
+- 10
 
----
+Default: 2.
 
-## How many Knowledge jobs run simultaneously?
+## How many Knowledge jobs can run at once?
 
-Up to **2 Knowledge workers** can prepare/reuse artifacts in parallel. Audit and Knowledge share a hard cap of **2 active Case Chat generations**.
+Two Knowledge workers are available.
 
----
+## Why can I select 10 workers if Case Chat only runs two generations at once?
 
-## Why can Audit show 100% while the XSUP is still active?
+XSUP/TACO collection work can run with higher parallelism, but the tool keeps a shared **Case Chat generation cap of 2** to avoid excessive concurrent AI-generation load.
 
-Because Audit and Knowledge are separate stages.
+## How does the tool choose CREATE KCS vs UPDATE EXISTING KCS?
 
-Knowledge may still be:
+The retrospective Audit performs a Knowledge-worthiness and destination decision.
 
-- checking reuse
-- queued
-- enriching
-- quality reviewing
-- repairing
-- downloading
+When a specific Salesforce KCS already covers meaningful material, the workflow checks whether the new gap can be merged into it.
 
-Overall XSUP status should reflect the full required workflow.
+- Mergeable overlap → UPDATE is preferred.
+- CREATE requires a distinct scope/task/symptom/workflow/audience justification.
 
----
+Product docs, Confluence, prior cases and Jira can be related knowledge without being a Salesforce KCS.
 
-## Why does the Auditor reuse existing Case Chat?
+## Can direct KCS mode still create a new KCS if an existing one is found?
 
-To avoid:
+Yes, when the reviewer intentionally wants a separate article and the scope is genuinely distinct.
 
-- duplicate AI work
-- duplicate Case Chat entries
-- unnecessary TACO/Case Chat load
-- inconsistent answers for unchanged source data
+The new draft should preserve/reference the related existing KCS instead of pretending no related knowledge exists.
 
----
+## What do REVIEW and BLOCKER mean?
 
-## Does changing the JavaScript automatically regenerate everything?
+**REVIEW** means a generated draft is useful but a named technical/currentness/scope/source item still needs validation.
 
-No.
+**BLOCKER** means a material issue must be resolved before the content can be treated as publication-ready.
 
-Source-current Audit/Knowledge can still be reused.
+These are safety signals, not necessarily generation failures.
 
-Use an individual Regenerate button when you intentionally want the latest workflow applied.
+## What is Cortex Brain validation?
 
----
+Downloaded KCS-family HTML contains small **SME Validation Tools** at the bottom:
 
-## What causes automatic refresh/regeneration?
+- Copy for Cortex Brain
+- Download for Cortex Brain
 
-Examples:
+The exported payload contains the clean KCS, source references and a mandatory independent-validation prompt.
 
-- newer Jira/SFDC evidence
-- stale/incomplete/failed TACO
-- product change
-- incompatible result type
-- no safe reusable result
+It is marked **NOT PUBLICATION READY**.
 
----
+## Why does the Cortex export not include the XSUP Auditor REVIEW/BLOCKER UI?
 
-## What does Regenerate Audit do?
+The Cortex Brain export is intentionally independent.
 
-Fresh Retrospective Audit using current TACO/evidence.
+It receives the clean proposed KCS plus evidence references and validation instructions so it can challenge the technical content itself.
 
-It does not rerun TACO.
+## Should I publish an article because the dashboard says READY?
 
-It does not automatically regenerate Knowledge.
+No automated status replaces human validation.
 
----
+Use the downloaded Knowledge artifact's detailed review/blocker content, source references and required SME/Cortex validation before publication.
 
-## What does Regenerate KCS / Regenerate Knowledge do?
+## Why might the dashboard and downloaded artifact wording differ?
 
-Fresh Knowledge only.
+The v1.0 pilot can still have minor status-label propagation differences in edge cases.
 
-It keeps the current TACO and current completed Audit.
+For publication/reuse decisions, the downloaded artifact's detailed quality result and review/blocker items take precedence over a summary dashboard label.
 
-It runs the current enrichment + quality + repair pipeline.
+## What is Stop All?
 
----
+It stops the Auditor's local queues/polling/requests as far as possible.
 
-## What does Re-analyze All do?
+A server-side TACO/Case Chat task already submitted may continue.
 
-Full refresh:
+## Should I report issues and edge cases?
 
-```text
-TACO → Audit → Knowledge
-```
+Yes. The purpose of the first team release is to collect real usage feedback.
 
----
-
-## What is Initial Readiness?
-
-The Retrospective Audit's estimate of whether enough evidence exists to draft Knowledge.
-
-It is not the final quality status.
-
----
-
-## What is Validated Readiness?
-
-The readiness after the Knowledge Quality Review and deterministic gate.
-
-Possible values:
-
-- READY
-- DRAFTABLE
-- NOT READY
-
----
-
-## What is READY?
-
-The draft is useful/materially complete and no material validation item remains.
-
-It still requires human publication review.
-
----
-
-## What is DRAFTABLE?
-
-The artifact is useful, but named material validation items remain.
-
-Example:
-
-```text
-Architecture is supported.
-Exact API schema still needs documentation-owner validation.
-```
-
----
-
-## What is NOT READY?
-
-The artifact is too incomplete, unsupported or unsafe to treat as a final usable Knowledge draft.
-
----
-
-## Why did my Knowledge article get blocked for "raw internal provenance marker is visible"?
-
-Because the final artifact still contained an internal reasoning marker such as:
-
-```text
-[inference]
-[from case data]
-[derived analysis]
-```
-
-Those are allowed during analysis, but not in the final user-facing article.
-
-The latest workflow attempts to resolve them safely and can run one automatic repair pass.
-
----
-
-## Why not just delete `[inference]`?
-
-Because that can turn an uncertain claim into a false-looking confirmed fact.
-
-Example:
-
-```text
-Policy applies in 10 minutes [inference]
-```
-
-must not become:
-
-```text
-Policy applies in 10 minutes
-```
-
-unless underlying evidence supports it.
-
-The system should instead:
-
-- prove and source it
-- move it to Validation
-- or remove it
-
----
-
-## What is the automatic Knowledge repair pass?
-
-If the AI produces a mostly good artifact but deterministic checks find a generic repairable defect, the tool gives it one evidence-bounded repair attempt.
-
-Examples:
-
-- internal provenance marker
-- unresolved placeholder
-- missing required section
-- incorrect Search Keywords
-- Source References issue
-- malformed quality envelope
-
-The repaired result must pass deterministic checks again.
-
----
-
-## Does the repair pass invent new technical facts?
-
-It must not.
-
-The repair prompt is limited to the existing retrospective/draft/evidence basis.
-
----
-
-## Why only one automatic repair?
-
-To avoid endless AI loops and repeated Case Chat calls.
-
-If one repair does not make the artifact safe, the result should remain NOT READY for human investigation.
-
----
-
-## Does a substantive AI quality FAIL get automatically repaired?
-
-No.
-
-The repair path is for repairable quality/safety defects, not to overrule a meaningful quality-review failure.
-
----
-
-## What deterministic checks are done on a KCS?
-
-Examples:
-
-- article is not obviously incomplete
-- no internal reuse metadata
-- no unresolved `@@...@@` token
-- no raw `[inference] / [from case data] / [derived analysis]`
-- no TODO/TBD placeholder
-- balanced Markdown code fences
-- required KCS sections exist
-- correct source XSUP
-- XSUP/SFDC not in reusable Search Keywords
-- Source References identify underlying sources
-- structured review/blocker items and readiness agree
-
----
-
-## What KCS sections are required by the deterministic gate?
-
-A new KCS Draft uses an **adaptive** structure rather than one fixed troubleshooting template.
-
-The deterministic gate requires these content roles:
-
-- an **Introduction / Overview** role;
-- an **issue / symptom / task context** role;
-- a **substantive explanation, action or procedure** role appropriate to the article type;
-- **Source References**.
-
-The exact headings can vary with the problem type. For example, a troubleshooting article may use Symptoms, Diagnosis, Resolution and Verification, while a how-to/configuration article may use Task/Goal, Prerequisites, Procedure and Verification.
-
-Useful additional sections can include Applies To / Environment, Background / What It Means, If the Issue Persists, Expected Behavior / Limitations, Related Knowledge / Documentation and Search Keywords. Material validation requirements appear as inline **REVIEW / REVIEW CURRENTNESS / BLOCKER** callouts rather than a separate bottom validation inventory.
-
----
-
-## Why can't Source References just say TACO or Case Chat?
-
-Because TACO/Case Chat is the synthesis mechanism.
-
-The article should identify the underlying source when available, such as an official doc, Engineering Jira, KCS, SFDC evidence or technical guide.
-
----
-
-## Why are XSUP/SFDC IDs blocked from Search Keywords?
-
-A future engineer should discover the KCS using a symptom, error, process, feature or failure pattern—not by already knowing an old ticket number.
-
----
-
-## Can AI still be wrong after all these checks?
-
-Yes.
-
-AI quality review + deterministic checks reduce risk but do not eliminate it.
-
-Human review remains required.
-
----
-
-## What happens after browser refresh?
-
-Run the Snippet again.
-
-Then:
-
-- rerun the XSUP and let Smart Reuse recover current server-side results, or
-- Restore Session from saved JSON
-
----
-
-## What does Stop All do?
-
-Stops local Auditor processing/queues/polling.
-
-A server-side TACO/Case Chat task already accepted may continue.
-
----
-
-## Where are reports stored?
-
-Browser Downloads by default.
-
-The reviewer can explicitly choose an approved local/desktop-synced folder.
-
----
-
-## Is the tool formally InfoSec approved?
-
-Do not assume so.
-
-Do not describe the tool as certified/approved/compliant unless formal approval has actually been granted.
-
----
-
-## What should never be committed to GitHub?
-
-Do not commit real:
-
-- customer details
-- case history
-- session exports
-- generated customer-case reports
-- support bundles/logs
-- browser tokens/cookies
-- credentials/secrets
-
-Use sanitized examples only.
-
----
-
-## What should I do if the result looks wrong?
-
-Do not apply it.
-
-Check:
-
-1. XSUP/SFDC
-2. product
-3. TACO state
-4. original evidence
-5. Analysis & Reuse Status
-6. Audit decision
-7. Knowledge quality/readiness
-8. inline review/blocker callouts and Source References
-
----
-
-# Installation / launch
-
-## What is the recommended way to run the tool?
-
-Use `dist/XSUP_Auditor_Bookmark_Installer.html` and drag the green **XSUP Auditor** button to the Chrome bookmarks bar. Reinstall/replace the bookmark after each release because the source is embedded in the bookmark itself.
-
-If drag-and-drop fails, use the installer's **Copy bookmark URL** button and manually create a bookmark whose URL is the copied `javascript:` value.
-
-## What is the fallback if bookmark execution is unavailable?
-
-Use the canonical `src/xsup-auditor.js` or copy-friendly `dist/XSUP_Auditor_JS.txt` as a Chrome DevTools Snippet.
-
-## Where can I launch the bookmark?
-
-From any authenticated TACO page under `https://taco.paloaltonetworks.com:3009/taco/`, including TACO Pilot and individual case pages. It intentionally rejects different origins/ports and lookalike paths outside the `/taco` tree.
-
-## Does the bookmark load code from an external website?
-
-No. The distributed bookmark is self-contained. It runs only on the exact origin `https://taco.paloaltonetworks.com:3009` and paths under `/taco` (for example `/taco/pilot/` or `/taco/case/03744225`). Managed-browser/security policies still apply.
-
-# Direct Generate KCS
-
-## Can I generate a KCS without running an XSUP retrospective?
-
-Yes. Click **Generate KCS** and enter either an XSUP ID or an 8-digit SFDC case number.
-
-The tool skips the retrospective Support-owned field review and goes directly through TACO/evidence → KCS generation → quality review → deterministic checks → optional repair → human review.
-
-## Does direct Generate KCS decide whether the case should be an Admin Guide, Runbook or Known Issue instead?
-
-No. Direct mode remains **KCS-family-only**; it does not switch to Admin Guide, Runbook or Known Issue.
-
-It starts as `CREATE KCS / KCS_DRAFT`, inspects the actual content of available Salesforce KCS candidates, and may reconcile to `UPDATE EXISTING KCS / KCS_UPDATE` when one article materially covers the same issue and can be extended. If candidate content cannot be validated, it keeps a new draft and surfaces a REVIEW rather than guessing.
-
-If UPDATE is recommended, **Create New KCS Anyway** remains available. The normal retrospective workflow is different: its validated Audit owns the Knowledge destination and downstream generation must not silently reroute CREATE↔UPDATE.
-
-## How does retrospective mode choose the Knowledge type?
-
-The Audit prompt chooses among:
-
-- CREATE KCS
-- UPDATE EXISTING KCS
-- UPDATE ADMIN/TECH GUIDE
-- CREATE/UPDATE RUNBOOK
-- KNOWN ISSUE/RELEASE NOTE
-- NO KNOWLEDGE ACTION
-- UNDETERMINED
-
-It considers whether the reusable value is a repeatable Support resolution, an existing-KCS gap, administrator/product-behavior documentation, an internal investigation workflow, a version-specific defect/limitation, or no material reusable gap.
-
-## What happens if the independent Knowledge quality stage is temporarily unavailable?
-
-Transient Case Chat request failures are handled by the workflow's bounded transport/recovery logic. This is reliability handling; it is not a separate "compact quality" stage.
-
-If independent quality validation still cannot complete but a usable enriched draft exists, the draft is preserved conservatively for review rather than discarded. The internal quality status can show **`VALIDATION UNAVAILABLE`**, and the artifact remains review-required until the quality stage is rerun successfully or the required validation is completed manually.
-
-This is an execution-state warning, not proof that the article's technical content received a substantive quality `FAIL`.
+When reporting a tool issue, provide the XSUP only through an approved internal channel and include the expected behavior, actual behavior and visible stage/status. Do not place customer-sensitive diagnostics in an unapproved GitHub issue.
