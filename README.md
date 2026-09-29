@@ -49,8 +49,7 @@ For Audit-only and KCS-only, the available choices are narrowed to the applicabl
 ### Bookmark installer — recommended
 
 Use:
-
-`dist/XSUP_Auditor_Bookmark_Installer.html`
+** [XSUP_Auditor_Bookmark_Installer.html](dist/XSUP_Auditor_Bookmark_Installer.html).**
 
 1. Open the HTML file locally in Chrome.
 2. Show the bookmarks bar.
