@@ -13548,7 +13548,7 @@ ${bodyHtml}
     return {reviewKind:"OTHER_MATERIAL_VALIDATION", mode:"runnable"};
   }
 
-  function deriveConcreteReviewItems(artifact, type) {
+  function deriveConcreteReviewItems(artifact, type, job) {
     const text = String(artifact || "");
     const reviewBody = removeKnowledgeSection(text, ["Source References", "TAC/SME Validation Items", "Validation Items", "Knowledge Reuse Basis — Internal Drafting Note", "Knowledge Reuse Basis", "Internal Notes — Full Context (Internal Only)", "Internal Notes — TAC Only", "Internal Notes"]);
     const items = [];
@@ -14311,7 +14311,7 @@ ${cleanArtifact}`.trim();
       .join("\n")
       .replace(/\n{3,}/g,"\n\n")
       .trim();
-    const derivedItems = [...deriveConcreteReviewItems(artifact, type), ...deriveSourceGovernanceReviewItems(artifact, refEntries, job)];
+    const derivedItems = [...deriveConcreteReviewItems(artifact, type, job), ...deriveSourceGovernanceReviewItems(artifact, refEntries, job)];
     const items = pruneKnowledgeReviewItems(enrichKnowledgeReviewItemRefs(mergeReviewItems(job.specialReviewItems || [], derivedItems), artifact, refEntries), artifact, type);
     const publication = items.some(x=>x.status==="BLOCKER") ? "BLOCKER" : "REVIEW";
     const refIdentity = knowledgeReferenceIdentityMap(artifact);
